@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { DAILY_TASKS } from './tasks';
+import { DAILY_TASKS, detectTimezone } from './tasks';
 
 // Environment variables detection
 // Vite loads from import.meta.env, we support standard VITE_ and NEXT_ prefixes
@@ -688,6 +688,68 @@ export const mockDb = new MockDatabase();
 
 // Supabase helper API proxies
 export const db = {
+  loginWithWhop: async (whopUser: { id: string; name: string; email: string; picture?: string | null }) => {
+    if (supabase) {
+      try {
+        const { data: existing } = await supabase
+          .from('users')
+          .select('*')
+          .eq('whop_id', whopUser.id)
+          .maybeSingle();
+
+        if (existing) {
+          await supabase.from('users').update({
+            name: whopUser.name,
+            email: whopUser.email,
+          }).eq('id', existing.id);
+          mockDb.currentUser = existing;
+          mockDb.save();
+          return existing;
+        }
+
+        const userId = 'usr_' + Math.random().toString(36).substr(2, 9);
+        const newUser = {
+          id: userId,
+          name: whopUser.name,
+          email: whopUser.email,
+          whop_id: whopUser.id,
+          timezone: detectTimezone(),
+          is_admin: ADMIN_EMAILS.includes(whopUser.email.toLowerCase()),
+          is_active: true,
+          created_at: new Date().toISOString(),
+        };
+
+        await supabase.from('users').insert([newUser]);
+        await supabase.from('streaks').insert([{
+          user_id: userId,
+          current_streak: 0,
+          longest_streak: 0,
+          last_completed_date: null,
+          total_completed: 0,
+        }]);
+
+        mockDb.currentUser = newUser;
+        mockDb.users.push(newUser);
+        mockDb.save();
+        return newUser;
+      } catch (e) {
+        console.warn('Supabase loginWithWhop failed, using mock:', e);
+      }
+    }
+
+    // Mock fallback
+    let user = mockDb.users.find((u: any) => u.whop_id === whopUser.id || u.email === whopUser.email);
+    if (!user) {
+      user = mockDb.registerUser(whopUser.name, whopUser.email, detectTimezone());
+    }
+    user.whop_id = whopUser.id;
+    user.name = whopUser.name;
+    user.email = whopUser.email;
+    mockDb.currentUser = user;
+    mockDb.save();
+    return user;
+  },
+
   getCurrentUser: async () => {
     if (supabase) {
       try {

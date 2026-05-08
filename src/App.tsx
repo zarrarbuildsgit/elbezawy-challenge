@@ -16,6 +16,7 @@ import {
 import ChatWidget from './components/ChatWidget';
 import { useLanguage } from './hooks/useLanguage';
 import LanguageToggle from './components/LanguageToggle';
+import { startWhopLogin, getWhopUser, clearWhopUser, refreshWhopToken, isTokenExpired } from './lib/whop';
 
 const PRESET_PROOFS = [
   {
@@ -93,10 +94,6 @@ export default function App() {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
   
-  // Register form state
-  const [registerName, setRegisterName] = useState('');
-  const [registerEmail, setRegisterEmail] = useState('');
-  const [registerTimezone, setRegisterTimezone] = useState(detectTimezone());
 
   // Leaderboard page states
   const [leaderboardUsers, setLeaderboardUsers] = useState<any[]>([]);
@@ -135,20 +132,32 @@ export default function App() {
   useEffect(() => {
     async function loadUser() {
       setLoading(true);
-      const user = await db.getCurrentUser();
-      setCurrentUser(user);
-      
-      if (user) {
-        setSettingsTimezone(user.timezone || detectTimezone());
-        const tasks = await db.getOrCreateTodayTasks(user.id, user.timezone);
-        setTodayTasks(tasks);
-      } else if (route !== '#/register') {
-        window.location.hash = '#/register';
+
+      if (isTokenExpired()) {
+        await refreshWhopToken();
       }
+
+      const whopUser = getWhopUser();
+
+      if (whopUser) {
+        const user = await db.loginWithWhop(whopUser);
+        setCurrentUser(user);
+        setSettingsTimezone(user?.timezone || detectTimezone());
+        if (user) {
+          const tasks = await db.getOrCreateTodayTasks(user.id, user.timezone);
+          setTodayTasks(tasks);
+        }
+      } else {
+        setCurrentUser(null);
+        if (route !== '#/login') {
+          window.location.hash = '#/login';
+        }
+      }
+
       setLoading(false);
     }
     loadUser();
-  }, [route, refreshTrigger]);
+  }, [refreshTrigger]);
 
   // Update current time every 10 seconds + check streak breaks
   useEffect(() => {
@@ -227,11 +236,12 @@ export default function App() {
   // Sign out handler
   const handleLogout = () => {
     if (confirm(lang === 'ar' ? 'هل أنت متأكد من رغبتك في تسجيل الخروج؟' : 'Are you sure you want to sign out?')) {
+      clearWhopUser();
       db.logout();
       setCurrentUser(null);
       setTodayTasks([]);
       setShowSettings(false);
-      window.location.hash = '#/register';
+      window.location.hash = '#/login';
     }
   };
 
@@ -352,7 +362,7 @@ export default function App() {
   };
 
   // Loading Screen
-  if (loading && !currentUser && route !== '#/register') {
+  if (loading && !currentUser && route !== '#/login') {
     return (
       <div className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center text-center px-4" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
         <div className="relative mb-6">
@@ -623,191 +633,52 @@ export default function App() {
       {/* Main Content Containers */}
       <main className="flex-1 max-w-3xl w-full mx-auto p-4 md:p-6 space-y-6">
         
-        {/* VIEW 1: ONBOARDING / REGISTER */}
-        {route === '#/register' && (
-          <div className="max-w-md mx-auto my-6 md:my-12 animate-fade-in relative">
-            
-            {/* Language Toggle centered above login card */}
-            <div className="flex justify-center mb-4">
+        {/* VIEW 1: LOGIN */}
+        {(route === '#/login' || (!currentUser && !loading)) && (
+          <div className="max-w-md mx-auto my-12 animate-fade-in">
+            <div className="flex justify-center mb-6">
               <LanguageToggle />
             </div>
 
-            <div className="bg-[#121212] border border-[#C9A84C]/20 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+            <div className="bg-[#121212] border border-[#C9A84C]/20 rounded-3xl p-8 shadow-2xl relative overflow-hidden text-center">
               <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-[#C9A84C] to-transparent" />
-              
-              <div className="text-center mb-8">
-                <div className="w-16 h-16 bg-[#C9A84C]/10 rounded-2xl border border-[#C9A84C]/30 flex items-center justify-center mx-auto mb-4">
-                  <Award className="w-8 h-8 text-[#C9A84C]" />
-                </div>
-                <h2 className="text-2xl font-black text-white">{t('login.title')}</h2>
-                <p className="text-sm text-gray-400 mt-2">{t('login.subtitle')}</p>
+
+              <div className="w-16 h-16 bg-[#C9A84C]/10 rounded-2xl border border-[#C9A84C]/30 flex items-center justify-center mx-auto mb-5">
+                <Flame className="w-8 h-8 text-[#C9A84C] animate-pulse" />
               </div>
 
-              <form onSubmit={handleRegisterSubmit} className="space-y-5">
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-2">{t('login.name')}</label>
-                  <input
-                    type="text"
-                    required
-                    value={registerName}
-                    onChange={(e) => setRegisterName(e.target.value)}
-                    placeholder={lang === 'ar' ? 'مثال: عبد الرحمن بن الوليد' : 'Example: Abdulrahman Alwaleed'}
-                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition"
-                  />
-                </div>
+              <h2 className="text-2xl font-black text-white mb-2">{t('login.title')}</h2>
+              <p className="text-sm text-gray-400 mb-8">{t('login.subtitle')}</p>
 
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-2">{t('login.email')}</label>
-                  <input
-                    type="email"
-                    required
-                    value={registerEmail}
-                    onChange={(e) => setRegisterEmail(e.target.value)}
-                    placeholder="example@elbezawi.com"
-                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-gray-400 mb-2">{lang === 'ar' ? 'المنطقة الزمنية' : 'Timezone'}</label>
-                  <select
-                    value={registerTimezone}
-                    onChange={(e) => setRegisterTimezone(e.target.value)}
-                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition-all duration-500 text-sm"
-                  >
-                    <optgroup label={lang === 'ar' ? '— الأمريكيتان —' : '— Americas —'}>
-                      <option value="America/New_York">New York (EST/EDT)</option>
-                      <option value="America/Chicago">Chicago (CST/CDT)</option>
-                      <option value="America/Denver">Denver (MST/MDT)</option>
-                      <option value="America/Los_Angeles">Los Angeles (PST/PDT)</option>
-                      <option value="America/Toronto">Toronto (EST/EDT)</option>
-                      <option value="America/Vancouver">Vancouver (PST/PDT)</option>
-                      <option value="America/Mexico_City">Mexico City (CST/CDT)</option>
-                      <option value="America/Sao_Paulo">São Paulo (BRT)</option>
-                      <option value="America/Buenos_Aires">Buenos Aires (ART)</option>
-                      <option value="America/Bogota">Bogotá (COT)</option>
-                      <option value="America/Lima">Lima (PET)</option>
-                      <option value="America/Caracas">Caracas (VET)</option>
-                    </optgroup>
-                    <optgroup label={lang === 'ar' ? '— أوروبا —' : '— Europe —'}>
-                      <option value="Europe/London">London (GMT/BST)</option>
-                      <option value="Europe/Paris">Paris (CET/CEST)</option>
-                      <option value="Europe/Berlin">Berlin (CET/CEST)</option>
-                      <option value="Europe/Madrid">Madrid (CET/CEST)</option>
-                      <option value="Europe/Rome">Rome (CET/CEST)</option>
-                      <option value="Europe/Amsterdam">Amsterdam (CET/CEST)</option>
-                      <option value="Europe/Stockholm">Stockholm (CET/CEST)</option>
-                      <option value="Europe/Warsaw">Warsaw (CET/CEST)</option>
-                      <option value="Europe/Istanbul">Istanbul (TRT)</option>
-                      <option value="Europe/Moscow">Moscow (MSK)</option>
-                    </optgroup>
-                    <optgroup label={lang === 'ar' ? '— الشرق الأوسط وأفريقيا —' : '— Middle East & Africa —'}>
-                      <option value="Asia/Riyadh">Riyadh (AST)</option>
-                      <option value="Asia/Dubai">Dubai (GST)</option>
-                      <option value="Asia/Kuwait">Kuwait (AST)</option>
-                      <option value="Asia/Qatar">Qatar (AST)</option>
-                      <option value="Asia/Bahrain">Bahrain (AST)</option>
-                      <option value="Asia/Muscat">Muscat (GST)</option>
-                      <option value="Asia/Baghdad">Baghdad (AST)</option>
-                      <option value="Asia/Beirut">Beirut (EET/EEST)</option>
-                      <option value="Asia/Amman">Amman (EET/EEST)</option>
-                      <option value="Asia/Jerusalem">Jerusalem (IST/IDT)</option>
-                      <option value="Africa/Cairo">Cairo (EET)</option>
-                      <option value="Africa/Casablanca">Casablanca (WET/WEST)</option>
-                      <option value="Africa/Tunis">Tunis (CET)</option>
-                      <option value="Africa/Algiers">Algiers (CET)</option>
-                      <option value="Africa/Tripoli">Tripoli (EET)</option>
-                      <option value="Africa/Khartoum">Khartoum (CAT)</option>
-                      <option value="Africa/Lagos">Lagos (WAT)</option>
-                      <option value="Africa/Nairobi">Nairobi (EAT)</option>
-                      <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
-                    </optgroup>
-                    <optgroup label={lang === 'ar' ? '— آسيا والمحيط الهادئ —' : '— Asia & Pacific —'}>
-                      <option value="Asia/Karachi">Karachi (PKT)</option>
-                      <option value="Asia/Kolkata">India (IST)</option>
-                      <option value="Asia/Dhaka">Dhaka (BST)</option>
-                      <option value="Asia/Colombo">Colombo (IST)</option>
-                      <option value="Asia/Kathmandu">Kathmandu (NPT)</option>
-                      <option value="Asia/Tashkent">Tashkent (UZT)</option>
-                      <option value="Asia/Tehran">Tehran (IRST)</option>
-                      <option value="Asia/Kabul">Kabul (AFT)</option>
-                      <option value="Asia/Bangkok">Bangkok (ICT)</option>
-                      <option value="Asia/Singapore">Singapore (SGT)</option>
-                      <option value="Asia/Kuala_Lumpur">Kuala Lumpur (MYT)</option>
-                      <option value="Asia/Jakarta">Jakarta (WIB)</option>
-                      <option value="Asia/Shanghai">China (CST)</option>
-                      <option value="Asia/Tokyo">Tokyo (JST)</option>
-                      <option value="Asia/Seoul">Seoul (KST)</option>
-                      <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
-                      <option value="Australia/Melbourne">Melbourne (AEST/AEDT)</option>
-                      <option value="Pacific/Auckland">Auckland (NZST/NZDT)</option>
-                      <option value="Pacific/Honolulu">Honolulu (HST)</option>
-                    </optgroup>
-                  </select>
-                  {(() => {
-                    const detectedTz = detectTimezone();
-                    const isMatch = registerTimezone === detectedTz;
-                    return (
-                      <p className="text-[11px] mt-1.5" style={{ color: '#C9A84C99' }}>
-                        🌍 {lang === 'ar' ? 'توقيتك المكتشف تلقائياً' : 'Your detected timezone'}: {detectedTz}
-                        {isMatch ? (
-                          <span style={{ color: '#5a9a5a' }}> ✓</span>
-                        ) : (
-                          <span
-                            onClick={() => setRegisterTimezone(detectedTz)}
-                            className="cursor-pointer hover:underline"
-                            style={{ color: '#C9A84C' }}
-                          >
-                            {lang === 'ar' ? ' — اضغط للتطبيق' : ' — tap to apply'}
-                          </span>
-                        )}
-                      </p>
-                    );
-                  })()}
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-[#C9A84C] hover:bg-[#b0913e] disabled:opacity-50 text-[#0D0D0D] font-bold py-3.5 px-4 rounded-xl transition shadow-xl mt-4"
-                >
-                  {loading ? (lang === 'ar' ? 'جاري الاشتراك...' : 'Joining...') : t('login.button')}
-                </button>
-              </form>
-            </div>
-
-            <div className="mt-6 bg-[#161616] p-4 rounded-2xl border border-white/5 text-center">
-              <h4 className="text-xs font-bold text-[#C9A84C] mb-2">{t('login.existing')}</h4>
-              <div className="flex gap-2 max-w-xs mx-auto">
-                <input 
-                  type="email" 
-                  placeholder={lang === 'ar' ? 'البريد السابق' : 'Previous email'} 
-                  className="bg-[#222] border border-white/5 text-xs text-white rounded-lg px-3 py-1.5 flex-1 focus:outline-none"
-                  onKeyDown={async (e) => {
-                    if (e.key === 'Enter') {
-                      const val = (e.target as HTMLInputElement).value;
-                      if (val) {
-                        setLoading(true);
-                        const exists = mockDb.users.find(u => u.email.toLowerCase() === val.toLowerCase());
-                        if (exists) {
-                          mockDb.currentUser = exists;
-                          mockDb.save();
-                          setRefreshTrigger(p => p + 1);
-                          window.location.hash = '#/';
-                        } else {
-                          alert(lang === 'ar' ? 'البريد الإلكتروني غير مسجل، يرجى الاشتراك!' : 'Email address not found, please sign up!');
-                        }
-                        setLoading(false);
-                      }
-                    }
-                  }}
+              <button
+                onClick={startWhopLogin}
+                className="w-full bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] font-black py-4 px-6 rounded-2xl transition shadow-xl flex items-center justify-center gap-3 text-base"
+              >
+                <img
+                  src="https://whop.com/favicon.ico"
+                  alt="Whop"
+                  className="w-5 h-5 rounded"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                 />
-              </div>
+                {lang === 'ar' ? 'تسجيل الدخول بـ Whop' : 'Sign in with Whop'}
+              </button>
+
+              <p className="text-[11px] text-gray-500 mt-4">
+                {lang === 'ar'
+                  ? 'يجب أن يكون لديك اشتراك نشط في Whop للمشاركة في التحدي'
+                  : 'You must have an active Whop membership to join the challenge'}
+              </p>
+
+              {route.includes('error') && (
+                <div className="mt-4 bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl text-xs">
+                  {lang === 'ar' ? 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.' : 'Login failed. Please try again.'}
+                </div>
+              )}
             </div>
           </div>
         )}
 
-        {/* VIEW 2: SCHEDULE / DASHBOARD */}
+                {/* VIEW 2: SCHEDULE / DASHBOARD */}
         {route === '#/' && currentUser && (
           <div className="space-y-4 animate-fade-in" ref={scheduleRef}>
             
