@@ -1,0 +1,1709 @@
+import { useState, useEffect, useRef } from 'react';
+import { 
+  Flame, Award, Lock, Upload, User, Calendar, 
+  BookOpen, Dumbbell, Target, Shield, XCircle, 
+  LogOut, Search, Clock, HelpCircle, RefreshCw, Eye,
+  Check, X, Image as ImageIcon, Heart, Settings
+} from 'lucide-react';
+import { db, mockDb } from './lib/supabase';
+import { 
+  detectTimezone, 
+  formatTimeEastern,
+  getTaskState,
+  getMinutesUntilWindowEnd,
+  buildTimelineItems
+} from './lib/tasks';
+import ChatWidget from './components/ChatWidget';
+import { useLanguage } from './hooks/useLanguage';
+import LanguageToggle from './components/LanguageToggle';
+
+const PRESET_PROOFS = [
+  {
+    name: 'تمرين ٣٠ دقيقة',
+    name_en: '30-min workout',
+    url: 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?q=80&w=600&auto=format&fit=crop',
+    icon: Dumbbell
+  },
+  {
+    name: 'قراءة ١٠ صفحات',
+    name_en: 'Read 10 pages',
+    url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=600&auto=format&fit=crop',
+    icon: BookOpen
+  },
+  {
+    name: 'مراجعة الأهداف',
+    name_en: 'Review goals',
+    url: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?q=80&w=600&auto=format&fit=crop',
+    icon: Target
+  }
+];
+
+const TASK_TITLE_EN: Record<string, string> = {
+  fajr: 'Fajr Prayer',
+  adhkar: 'Morning Adhkar',
+  exercise: '30-min Workout',
+  reading: 'Read 10 Pages',
+  goals: 'Review Goals',
+  quran: 'Read Quran'
+};
+
+const TASK_NOTE_EN: Record<string, string> = {
+  fajr: 'This is between you and Allah — no proof required',
+  adhkar: 'This is between you and Allah — no proof required',
+  exercise: 'Upload a photo as proof of completion',
+  reading: 'Upload a photo of the book or page',
+  goals: 'Photo of your notebook or progress log',
+  quran: 'This is between you and Allah — no proof required'
+};
+
+function getLocalizedTaskTitle(task: any, lang: 'ar' | 'en') {
+  return lang === 'en' ? (TASK_TITLE_EN[task.task_id] || task.title_ar) : task.title_ar;
+}
+
+function getLocalizedTaskNote(task: any, lang: 'ar' | 'en') {
+  return lang === 'en' ? (TASK_NOTE_EN[task.task_id] || task.note_ar) : task.note_ar;
+}
+
+function getLocalizedTaskTime(time: string, lang: 'ar' | 'en') {
+  return lang === 'en' ? time : formatTimeEastern(time);
+}
+
+function TaskTypeIcon({ type }: { type: string }) {
+  if (type === 'spiritual') return <Heart className="w-3.5 h-3.5 text-emerald-400" />;
+  if (type === 'physical') return <Dumbbell className="w-3.5 h-3.5 text-amber-400" />;
+  return <BookOpen className="w-3.5 h-3.5 text-sky-400" />;
+}
+
+function TaskTypeLabel({ type, lang }: { type: string; lang: 'ar' | 'en' }) {
+  if (type === 'spiritual') return <span className="text-[9px] text-emerald-400 font-bold">{lang === 'ar' ? 'روحاني' : 'Spiritual'}</span>;
+  if (type === 'physical') return <span className="text-[9px] text-amber-400 font-bold">{lang === 'ar' ? 'بدني' : 'Physical'}</span>;
+  return <span className="text-[9px] text-sky-400 font-bold">{lang === 'ar' ? 'ذهني' : 'Mental'}</span>;
+}
+
+export default function App() {
+  const { lang, t, n } = useLanguage();
+  const [settingsTimezone, setSettingsTimezone] = useState(detectTimezone());
+  const [route, setRoute] = useState<string>(window.location.hash || '#/');
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [todayTasks, setTodayTasks] = useState<any[]>([]);
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [showSettings, setShowSettings] = useState(false);
+  
+  // App-wide loading & trigger states
+  const [loading, setLoading] = useState<boolean>(true);
+  const [refreshTrigger, setRefreshTrigger] = useState<number>(0);
+  
+  // Register form state
+  const [registerName, setRegisterName] = useState('');
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerTimezone, setRegisterTimezone] = useState(detectTimezone());
+
+  // Leaderboard page states
+  const [leaderboardUsers, setLeaderboardUsers] = useState<any[]>([]);
+  const [leaderboardSearch, setLeaderboardSearch] = useState('');
+
+  // Admin page states
+  const [adminUsers, setAdminUsers] = useState<any[]>([]);
+  const [adminSearch, setAdminSearch] = useState('');
+  const [selectedAdminUser, setSelectedAdminUser] = useState<any>(null);
+  const [adminTab, setAdminTab] = useState<'users' | 'photos'>('users');
+  const [photoSubmissions, setPhotoSubmissions] = useState<any[]>([]);
+  const [rejectingTaskId, setRejectingTaskId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Upload modal states
+  const [activeUploadTask, setActiveUploadTask] = useState<any>(null);
+  const [selectedPresetUrl, setSelectedPresetUrl] = useState<string>('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [validationMessage, setValidationMessage] = useState('');
+
+  const scheduleRef = useRef<HTMLDivElement>(null);
+  const activeTaskRef = useRef<HTMLDivElement>(null);
+
+  // Router listener
+  useEffect(() => {
+    const handleHashChange = () => {
+      setRoute(window.location.hash || '#/');
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Fetch current user details
+  useEffect(() => {
+    async function loadUser() {
+      setLoading(true);
+      const user = await db.getCurrentUser();
+      setCurrentUser(user);
+      
+      if (user) {
+        setSettingsTimezone(user.timezone || detectTimezone());
+        const tasks = await db.getOrCreateTodayTasks(user.id, user.timezone);
+        setTodayTasks(tasks);
+      } else if (route !== '#/register') {
+        window.location.hash = '#/register';
+      }
+      setLoading(false);
+    }
+    loadUser();
+  }, [route, refreshTrigger]);
+
+  // Update current time every 10 seconds + check streak breaks
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = new Date();
+      setCurrentTime(now);
+      
+      if (currentUser) {
+        const dayNumber = mockDb.getDayNumber(currentUser);
+        mockDb.checkExpiredTasksAndBreakStreak(currentUser.id, dayNumber);
+      }
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Auto-scroll to active task on schedule mount
+  useEffect(() => {
+    if (route === '#/' && todayTasks.length > 0 && activeTaskRef.current) {
+      const timer = setTimeout(() => {
+        activeTaskRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [route, todayTasks]);
+
+  // Load Leaderboard data
+  useEffect(() => {
+    if (route === '#/leaderboard') {
+      async function loadLeaderboard() {
+        const users = await db.getLeaderboard();
+        setLeaderboardUsers(users);
+      }
+      loadLeaderboard();
+    }
+  }, [route, refreshTrigger]);
+
+  // Load Admin data
+  useEffect(() => {
+    if (route === '#/admin') {
+      async function loadAdminData() {
+        const users = await db.adminGetUsers();
+        setAdminUsers(users);
+        const photos = await db.adminGetPhotoSubmissions();
+        setPhotoSubmissions(photos);
+        if (selectedAdminUser) {
+          const updated = users.find((u: any) => u.id === selectedAdminUser.id);
+          if (updated) setSelectedAdminUser(updated);
+        }
+      }
+      loadAdminData();
+    }
+  }, [route, refreshTrigger, selectedAdminUser?.id]);
+
+  // Registration handler
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registerName.trim() || !registerEmail.trim()) {
+      alert(lang === 'ar' ? 'الرجاء إدخال اسمك وبريدك الإلكتروني للاشتراك في التحدي.' : 'Please enter your name and email to join the challenge.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const newUser = await db.register(registerName, registerEmail, registerTimezone);
+      setCurrentUser(newUser);
+      setRefreshTrigger(p => p + 1);
+      window.location.hash = '#/';
+    } catch (err) {
+      console.error(err);
+      alert(lang === 'ar' ? 'فشل التسجيل، يرجى المحاولة لاحقاً.' : 'Registration failed, please try again later.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sign out handler
+  const handleLogout = () => {
+    if (confirm(lang === 'ar' ? 'هل أنت متأكد من رغبتك في تسجيل الخروج؟' : 'Are you sure you want to sign out?')) {
+      db.logout();
+      setCurrentUser(null);
+      setTodayTasks([]);
+      setShowSettings(false);
+      window.location.hash = '#/register';
+    }
+  };
+
+  // CHANGE 2 - Explicit safe checkmark trigger for spiritual tasks (No photo required)
+  const handleSpiritualComplete = async (task: any) => {
+    if (!currentUser) return;
+    
+    // Explicit requires_photo === false safety guard to prevent accidental photo modals
+    if (task.requires_photo === false) {
+      try {
+        const updated = await db.completeTask(task.id, null, currentUser.id, task.day_number);
+        if (updated && (updated as any).error) {
+          alert((updated as any).error);
+        } else {
+          setRefreshTrigger(p => p + 1);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  // Photo upload submit handler
+  const handleTaskCompleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeUploadTask) return;
+    
+    if (!selectedFile && !selectedPresetUrl) {
+      setUploadError(currentUser?.is_admin 
+        ? (lang === 'ar' ? 'يرجى اختيار صورة من جهازك أو تحديد إحدى الصور السريعة المقترحة!' : 'Please pick a file from your device or select a preset!')
+        : (lang === 'ar' ? 'يرجى اختيار صورة من جهازك لرفع الإثبات!' : 'Please select a photo from your device to upload proof!')
+      );
+      return;
+    }
+
+    if (selectedPresetUrl && currentUser?.is_admin) {
+      try {
+        setIsUploading(true);
+        setUploadError('');
+        setValidationMessage('');
+        
+        const updated = await db.completeTask(
+          activeUploadTask.id, 
+          selectedPresetUrl, 
+          currentUser.id, 
+          activeUploadTask.day_number
+        );
+
+        if (updated && (updated as any).error) {
+          setUploadError((updated as any).error);
+        } else {
+          setActiveUploadTask(null);
+          setSelectedFile(null);
+          setSelectedPresetUrl('');
+          setRefreshTrigger(p => p + 1);
+        }
+      } catch (err) {
+        setUploadError(lang === 'ar' ? 'حدث خطأ أثناء حفظ الإثبات، حاول ثانية.' : 'Failed to save proof, please try again.');
+      } finally {
+        setIsUploading(false);
+      }
+      return;
+    }
+
+    if (selectedFile) {
+      try {
+        setIsUploading(true);
+        setUploadError('');
+        setValidationMessage(lang === 'ar' ? 'جاري التحقق من صحة الصورة بالذكاء الاصطناعي...' : 'Validating photo authenticity with AI...');
+        
+        const updated = await db.completeTask(
+          activeUploadTask.id, 
+          selectedFile, 
+          currentUser.id, 
+          activeUploadTask.day_number
+        );
+
+        if (updated && (updated as any).error) {
+          setUploadError((updated as any).error);
+          setValidationMessage('');
+        } else {
+          setActiveUploadTask(null);
+          setSelectedFile(null);
+          setSelectedPresetUrl('');
+          setRefreshTrigger(p => p + 1);
+        }
+      } catch (err) {
+        setUploadError(lang === 'ar' ? 'حدث خطأ أثناء حفظ الإثبات، حاول ثانية.' : 'An error occurred while uploading. Please try again.');
+      } finally {
+        setIsUploading(false);
+        setValidationMessage('');
+      }
+      return;
+    }
+  };
+
+  // Admin actions
+  const handleAdminToggleUser = async (userId: string) => {
+    await db.adminToggleUser(userId);
+    setRefreshTrigger(p => p + 1);
+  };
+
+  const handleAdminOverride = async (taskId: string, completed: boolean, fallbackUrl?: string) => {
+    const url = completed ? (fallbackUrl || '') : '';
+    await db.adminOverrideTask(taskId, completed, url);
+    setRefreshTrigger(p => p + 1);
+  };
+
+  const handleAdminRejectPhoto = async (taskId: string) => {
+    if (!rejectReason.trim()) {
+      alert(lang === 'ar' ? 'الرجاء كتابة سبب الرفض' : 'Please provide a rejection reason');
+      return;
+    }
+    await db.adminRejectPhoto(taskId, rejectReason);
+    setRejectingTaskId(null);
+    setRejectReason('');
+    setRefreshTrigger(p => p + 1);
+  };
+
+  // Loading Screen
+  if (loading && !currentUser && route !== '#/register') {
+    return (
+      <div className="min-h-screen bg-[#0D0D0D] flex flex-col items-center justify-center text-center px-4" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+        <div className="relative mb-6">
+          <div className="w-20 h-20 rounded-full border-4 border-[#C9A84C]/20 border-t-[#C9A84C] animate-spin"></div>
+          <Flame className="w-10 h-10 text-[#C9A84C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
+        </div>
+        <h1 className="text-xl font-bold text-white mb-2">{t('login.title')}</h1>
+        <p className="text-gray-400 text-sm">Loading Schedule...</p>
+      </div>
+    );
+  }
+
+  const userStreak = currentUser ? mockDb.getStreak(currentUser.id) : null;
+  const currentDay = currentUser ? mockDb.getDayNumber(currentUser) : 1;
+  const currentDate = new Date().toLocaleDateString(lang === 'ar' ? 'ar-SA' : 'en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+  });
+
+  const scheduleTasks = todayTasks.filter(t => t.task_id);
+  const timelineItems = buildTimelineItems(scheduleTasks, currentTime);
+  const completedCount = scheduleTasks.filter(t => t.completed).length;
+
+  return (
+    <div className="min-h-screen bg-[#0D0D0D] text-[#E0E0E0] flex flex-col selection:bg-[#C9A84C] selection:text-[#0D0D0D] transition-all duration-500 ease-in-out" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+      
+      {/* Navigation Bar */}
+      <nav className="sticky top-0 z-40 bg-[#121212]/95 backdrop-blur-md border-b border-[#C9A84C]/15 px-4 py-3 shadow-lg">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+          
+          {/* Logo Brand */}
+          <div className="flex items-center justify-between">
+            <a href="#/" className="flex items-center gap-3 group">
+              <div className="w-10 h-10 rounded-xl bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center group-hover:scale-105 transition-all">
+                <Flame className="w-6 h-6 text-[#C9A84C] animate-pulse" />
+              </div>
+              <div>
+                <h1 className="font-bold text-white text-base md:text-lg tracking-wide">{t('login.title')}</h1>
+                <p className="text-[10px] text-[#C9A84C] font-semibold tracking-wider">ELBEZAWY CHALLENGE</p>
+              </div>
+            </a>
+            
+            {currentUser && (
+              <div className="flex items-center gap-2 md:hidden">
+                <div className="flex items-center gap-1 bg-[#C9A84C]/10 text-[#C9A84C] px-2.5 py-1 rounded-full border border-[#C9A84C]/20 text-xs font-bold">
+                  <Flame className="w-4 h-4 fill-current animate-bounce" />
+                  <span>{n(userStreak?.current_streak || 0)}</span>
+                </div>
+                <button 
+                  onClick={() => setShowSettings(!showSettings)} 
+                  className="p-1.5 text-gray-400 hover:text-[#C9A84C] rounded-lg transition"
+                >
+                  <Settings className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Navigation Links */}
+          {currentUser && (
+            <div className="flex flex-wrap items-center gap-1.5 md:gap-3">
+              <a 
+                href="#/" 
+                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition ${
+                  route === '#/' 
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]' 
+                    : 'text-gray-400 hover:text-white hover:bg-[#C9A84C]/5'
+                }`}
+              >
+                {lang === 'ar' ? 'الجدول اليومي' : 'Daily Schedule'}
+              </a>
+              <a 
+                href="#/leaderboard" 
+                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition ${
+                  route === '#/leaderboard' 
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]' 
+                    : 'text-gray-400 hover:text-white hover:bg-[#C9A84C]/5'
+                }`}
+              >
+                {lang === 'ar' ? 'لوحة الصدارة 🏆' : 'Leaderboard 🏆'}
+              </a>
+              <a 
+                href="#/admin" 
+                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition flex items-center gap-1 ${
+                  route === '#/admin' 
+                    ? 'bg-amber-600 text-white' 
+                    : 'text-gray-500 hover:text-amber-400 hover:bg-amber-500/5'
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                <span>{t('admin.title')}</span>
+              </a>
+            </div>
+          )}
+
+          {/* Desktop settings & stats */}
+          {currentUser && (
+            <div className="hidden md:flex items-center gap-4 bg-[#181818] px-4 py-2 rounded-2xl border border-white/5 relative">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-[#C9A84C]/10 flex items-center justify-center text-[#C9A84C] border border-[#C9A84C]/20">
+                  <User className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-white">{currentUser.name}</h4>
+                  <p className="text-[9px] text-gray-500">{currentUser.email}</p>
+                </div>
+              </div>
+
+              <div className="h-6 w-[1px] bg-white/10" />
+
+              <div className="flex items-center gap-1 text-xs">
+                <span className="text-gray-400">{t('schedule.streak')}:</span>
+                <span className="bg-[#C9A84C]/15 text-[#C9A84C] border border-[#C9A84C]/30 px-2.5 py-0.5 rounded-full font-bold flex items-center gap-1">
+                  <Flame className="w-3.5 h-3.5 fill-current animate-bounce" />
+                  {n(userStreak?.current_streak || 0)}
+                </span>
+              </div>
+
+              <button 
+                onClick={() => setShowSettings(!showSettings)} 
+                className="text-gray-400 hover:text-[#C9A84C] p-1.5 rounded-lg transition"
+                title={t('settings.title')}
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      {/* SETTINGS OVERLAY POPUP */}
+      {showSettings && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 transition-all duration-500 ease-in-out">
+          <div className="bg-[#121212] border border-[#C9A84C]/30 rounded-3xl max-w-sm w-full p-6 space-y-4 relative overflow-hidden animate-fade-in shadow-2xl transition-all duration-500 ease-in-out">
+            <div className="absolute top-0 left-0 right-0 h-1 bg-[#C9A84C]" />
+            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+              <h3 className="font-bold text-white text-base">{t('settings.title')}</h3>
+              <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-white transition-all duration-500 text-sm">
+                ✕
+              </button>
+            </div>
+
+            {/* Timezone Row */}
+            <div className="flex flex-col gap-2 bg-[#181818] p-4 rounded-2xl border border-white/5 text-start">
+              <span className="text-sm font-bold text-gray-300">{lang === 'ar' ? 'المنطقة الزمنية' : 'Timezone'}</span>
+              <select
+                value={settingsTimezone}
+                onChange={(e) => setSettingsTimezone(e.target.value)}
+                className="w-full bg-[#121212] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition-all duration-500 text-xs"
+              >
+                <optgroup label={lang === 'ar' ? '— الأمريكيتان —' : '— Americas —'}>
+                  <option value="America/New_York">New York (EST/EDT)</option>
+                  <option value="America/Chicago">Chicago (CST/CDT)</option>
+                  <option value="America/Denver">Denver (MST/MDT)</option>
+                  <option value="America/Los_Angeles">Los Angeles (PST/PDT)</option>
+                  <option value="America/Toronto">Toronto (EST/EDT)</option>
+                  <option value="America/Vancouver">Vancouver (PST/PDT)</option>
+                  <option value="America/Mexico_City">Mexico City (CST/CDT)</option>
+                  <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                  <option value="America/Buenos_Aires">Buenos Aires (ART)</option>
+                  <option value="America/Bogota">Bogotá (COT)</option>
+                  <option value="America/Lima">Lima (PET)</option>
+                  <option value="America/Caracas">Caracas (VET)</option>
+                </optgroup>
+                <optgroup label={lang === 'ar' ? '— أوروبا —' : '— Europe —'}>
+                  <option value="Europe/London">London (GMT/BST)</option>
+                  <option value="Europe/Paris">Paris (CET/CEST)</option>
+                  <option value="Europe/Berlin">Berlin (CET/CEST)</option>
+                  <option value="Europe/Madrid">Madrid (CET/CEST)</option>
+                  <option value="Europe/Rome">Rome (CET/CEST)</option>
+                  <option value="Europe/Amsterdam">Amsterdam (CET/CEST)</option>
+                  <option value="Europe/Stockholm">Stockholm (CET/CEST)</option>
+                  <option value="Europe/Warsaw">Warsaw (CET/CEST)</option>
+                  <option value="Europe/Istanbul">Istanbul (TRT)</option>
+                  <option value="Europe/Moscow">Moscow (MSK)</option>
+                </optgroup>
+                <optgroup label={lang === 'ar' ? '— الشرق الأوسط وأفريقيا —' : '— Middle East & Africa —'}>
+                  <option value="Asia/Riyadh">Riyadh (AST)</option>
+                  <option value="Asia/Dubai">Dubai (GST)</option>
+                  <option value="Asia/Kuwait">Kuwait (AST)</option>
+                  <option value="Asia/Qatar">Qatar (AST)</option>
+                  <option value="Asia/Bahrain">Bahrain (AST)</option>
+                  <option value="Asia/Muscat">Muscat (GST)</option>
+                  <option value="Asia/Baghdad">Baghdad (AST)</option>
+                  <option value="Asia/Beirut">Beirut (EET/EEST)</option>
+                  <option value="Asia/Amman">Amman (EET/EEST)</option>
+                  <option value="Asia/Jerusalem">Jerusalem (IST/IDT)</option>
+                  <option value="Africa/Cairo">Cairo (EET)</option>
+                  <option value="Africa/Casablanca">Casablanca (WET/WEST)</option>
+                  <option value="Africa/Tunis">Tunis (CET)</option>
+                  <option value="Africa/Algiers">Algiers (CET)</option>
+                  <option value="Africa/Tripoli">Tripoli (EET)</option>
+                  <option value="Africa/Khartoum">Khartoum (CAT)</option>
+                  <option value="Africa/Lagos">Lagos (WAT)</option>
+                  <option value="Africa/Nairobi">Nairobi (EAT)</option>
+                  <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+                </optgroup>
+                <optgroup label={lang === 'ar' ? '— آسيا والمحيط الهادئ —' : '— Asia & Pacific —'}>
+                  <option value="Asia/Karachi">Karachi (PKT)</option>
+                  <option value="Asia/Kolkata">India (IST)</option>
+                  <option value="Asia/Dhaka">Dhaka (BST)</option>
+                  <option value="Asia/Colombo">Colombo (IST)</option>
+                  <option value="Asia/Kathmandu">Kathmandu (NPT)</option>
+                  <option value="Asia/Tashkent">Tashkent (UZT)</option>
+                  <option value="Asia/Tehran">Tehran (IRST)</option>
+                  <option value="Asia/Kabul">Kabul (AFT)</option>
+                  <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                  <option value="Asia/Singapore">Singapore (SGT)</option>
+                  <option value="Asia/Kuala_Lumpur">Kuala Lumpur (MYT)</option>
+                  <option value="Asia/Jakarta">Jakarta (WIB)</option>
+                  <option value="Asia/Shanghai">China (CST)</option>
+                  <option value="Asia/Tokyo">Tokyo (JST)</option>
+                  <option value="Asia/Seoul">Seoul (KST)</option>
+                  <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+                  <option value="Australia/Melbourne">Melbourne (AEST/AEDT)</option>
+                  <option value="Pacific/Auckland">Auckland (NZST/NZDT)</option>
+                  <option value="Pacific/Honolulu">Honolulu (HST)</option>
+                </optgroup>
+              </select>
+              {(() => {
+                const detectedTz = detectTimezone();
+                const isMatch = settingsTimezone === detectedTz;
+                return (
+                  <p className="text-[10px] mt-0.5" style={{ color: '#C9A84C99' }}>
+                    🌍 {lang === 'ar' ? 'توقيتك المكتشف تلقائياً' : 'Your detected timezone'}: {detectedTz}
+                    {isMatch ? (
+                      <span style={{ color: '#5a9a5a' }}> ✓</span>
+                    ) : (
+                      <span
+                        onClick={() => setSettingsTimezone(detectedTz)}
+                        className="cursor-pointer hover:underline animate-pulse"
+                        style={{ color: '#C9A84C' }}
+                      >
+                        {lang === 'ar' ? ' — اضغط للتطبيق' : ' — tap to apply'}
+                      </span>
+                    )}
+                  </p>
+                );
+              })()}
+              <button
+                onClick={async () => {
+                  await db.updateUserTimezone(currentUser.id, settingsTimezone);
+                  setRefreshTrigger(p => p + 1);
+                  alert(lang === 'ar' ? 'تم حفظ التوقيت بنجاح!' : 'Timezone saved successfully!');
+                }}
+                className="mt-1.5 w-full bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] font-bold py-2 rounded-xl text-xs transition"
+              >
+                {lang === 'ar' ? 'حفظ التوقيت' : 'Save timezone'}
+              </button>
+            </div>
+
+            {/* Language row centered */}
+            <div className="flex flex-col items-center justify-center gap-3 bg-[#181818] p-4 rounded-2xl border border-white/5">
+              <span className="text-sm font-bold text-gray-300 text-center">{t('settings.language')}</span>
+              <LanguageToggle />
+            </div>
+
+            <button
+              onClick={handleLogout}
+              className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-2.5 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2"
+            >
+              <LogOut className="w-4 h-4" />
+              <span>{t('settings.logout')}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Containers */}
+      <main className="flex-1 max-w-3xl w-full mx-auto p-4 md:p-6 space-y-6">
+        
+        {/* VIEW 1: ONBOARDING / REGISTER */}
+        {route === '#/register' && (
+          <div className="max-w-md mx-auto my-6 md:my-12 animate-fade-in relative">
+            
+            {/* Language Toggle centered above login card */}
+            <div className="flex justify-center mb-4">
+              <LanguageToggle />
+            </div>
+
+            <div className="bg-[#121212] border border-[#C9A84C]/20 rounded-3xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-transparent via-[#C9A84C] to-transparent" />
+              
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-[#C9A84C]/10 rounded-2xl border border-[#C9A84C]/30 flex items-center justify-center mx-auto mb-4">
+                  <Award className="w-8 h-8 text-[#C9A84C]" />
+                </div>
+                <h2 className="text-2xl font-black text-white">{t('login.title')}</h2>
+                <p className="text-sm text-gray-400 mt-2">{t('login.subtitle')}</p>
+              </div>
+
+              <form onSubmit={handleRegisterSubmit} className="space-y-5">
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-2">{t('login.name')}</label>
+                  <input
+                    type="text"
+                    required
+                    value={registerName}
+                    onChange={(e) => setRegisterName(e.target.value)}
+                    placeholder={lang === 'ar' ? 'مثال: عبد الرحمن بن الوليد' : 'Example: Abdulrahman Alwaleed'}
+                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-2">{t('login.email')}</label>
+                  <input
+                    type="email"
+                    required
+                    value={registerEmail}
+                    onChange={(e) => setRegisterEmail(e.target.value)}
+                    placeholder="example@elbezawi.com"
+                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-400 mb-2">{lang === 'ar' ? 'المنطقة الزمنية' : 'Timezone'}</label>
+                  <select
+                    value={registerTimezone}
+                    onChange={(e) => setRegisterTimezone(e.target.value)}
+                    className="w-full bg-[#181818] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-1 focus:ring-[#C9A84C] transition-all duration-500 text-sm"
+                  >
+                    <optgroup label={lang === 'ar' ? '— الأمريكيتان —' : '— Americas —'}>
+                      <option value="America/New_York">New York (EST/EDT)</option>
+                      <option value="America/Chicago">Chicago (CST/CDT)</option>
+                      <option value="America/Denver">Denver (MST/MDT)</option>
+                      <option value="America/Los_Angeles">Los Angeles (PST/PDT)</option>
+                      <option value="America/Toronto">Toronto (EST/EDT)</option>
+                      <option value="America/Vancouver">Vancouver (PST/PDT)</option>
+                      <option value="America/Mexico_City">Mexico City (CST/CDT)</option>
+                      <option value="America/Sao_Paulo">São Paulo (BRT)</option>
+                      <option value="America/Buenos_Aires">Buenos Aires (ART)</option>
+                      <option value="America/Bogota">Bogotá (COT)</option>
+                      <option value="America/Lima">Lima (PET)</option>
+                      <option value="America/Caracas">Caracas (VET)</option>
+                    </optgroup>
+                    <optgroup label={lang === 'ar' ? '— أوروبا —' : '— Europe —'}>
+                      <option value="Europe/London">London (GMT/BST)</option>
+                      <option value="Europe/Paris">Paris (CET/CEST)</option>
+                      <option value="Europe/Berlin">Berlin (CET/CEST)</option>
+                      <option value="Europe/Madrid">Madrid (CET/CEST)</option>
+                      <option value="Europe/Rome">Rome (CET/CEST)</option>
+                      <option value="Europe/Amsterdam">Amsterdam (CET/CEST)</option>
+                      <option value="Europe/Stockholm">Stockholm (CET/CEST)</option>
+                      <option value="Europe/Warsaw">Warsaw (CET/CEST)</option>
+                      <option value="Europe/Istanbul">Istanbul (TRT)</option>
+                      <option value="Europe/Moscow">Moscow (MSK)</option>
+                    </optgroup>
+                    <optgroup label={lang === 'ar' ? '— الشرق الأوسط وأفريقيا —' : '— Middle East & Africa —'}>
+                      <option value="Asia/Riyadh">Riyadh (AST)</option>
+                      <option value="Asia/Dubai">Dubai (GST)</option>
+                      <option value="Asia/Kuwait">Kuwait (AST)</option>
+                      <option value="Asia/Qatar">Qatar (AST)</option>
+                      <option value="Asia/Bahrain">Bahrain (AST)</option>
+                      <option value="Asia/Muscat">Muscat (GST)</option>
+                      <option value="Asia/Baghdad">Baghdad (AST)</option>
+                      <option value="Asia/Beirut">Beirut (EET/EEST)</option>
+                      <option value="Asia/Amman">Amman (EET/EEST)</option>
+                      <option value="Asia/Jerusalem">Jerusalem (IST/IDT)</option>
+                      <option value="Africa/Cairo">Cairo (EET)</option>
+                      <option value="Africa/Casablanca">Casablanca (WET/WEST)</option>
+                      <option value="Africa/Tunis">Tunis (CET)</option>
+                      <option value="Africa/Algiers">Algiers (CET)</option>
+                      <option value="Africa/Tripoli">Tripoli (EET)</option>
+                      <option value="Africa/Khartoum">Khartoum (CAT)</option>
+                      <option value="Africa/Lagos">Lagos (WAT)</option>
+                      <option value="Africa/Nairobi">Nairobi (EAT)</option>
+                      <option value="Africa/Johannesburg">Johannesburg (SAST)</option>
+                    </optgroup>
+                    <optgroup label={lang === 'ar' ? '— آسيا والمحيط الهادئ —' : '— Asia & Pacific —'}>
+                      <option value="Asia/Karachi">Karachi (PKT)</option>
+                      <option value="Asia/Kolkata">India (IST)</option>
+                      <option value="Asia/Dhaka">Dhaka (BST)</option>
+                      <option value="Asia/Colombo">Colombo (IST)</option>
+                      <option value="Asia/Kathmandu">Kathmandu (NPT)</option>
+                      <option value="Asia/Tashkent">Tashkent (UZT)</option>
+                      <option value="Asia/Tehran">Tehran (IRST)</option>
+                      <option value="Asia/Kabul">Kabul (AFT)</option>
+                      <option value="Asia/Bangkok">Bangkok (ICT)</option>
+                      <option value="Asia/Singapore">Singapore (SGT)</option>
+                      <option value="Asia/Kuala_Lumpur">Kuala Lumpur (MYT)</option>
+                      <option value="Asia/Jakarta">Jakarta (WIB)</option>
+                      <option value="Asia/Shanghai">China (CST)</option>
+                      <option value="Asia/Tokyo">Tokyo (JST)</option>
+                      <option value="Asia/Seoul">Seoul (KST)</option>
+                      <option value="Australia/Sydney">Sydney (AEST/AEDT)</option>
+                      <option value="Australia/Melbourne">Melbourne (AEST/AEDT)</option>
+                      <option value="Pacific/Auckland">Auckland (NZST/NZDT)</option>
+                      <option value="Pacific/Honolulu">Honolulu (HST)</option>
+                    </optgroup>
+                  </select>
+                  {(() => {
+                    const detectedTz = detectTimezone();
+                    const isMatch = registerTimezone === detectedTz;
+                    return (
+                      <p className="text-[11px] mt-1.5" style={{ color: '#C9A84C99' }}>
+                        🌍 {lang === 'ar' ? 'توقيتك المكتشف تلقائياً' : 'Your detected timezone'}: {detectedTz}
+                        {isMatch ? (
+                          <span style={{ color: '#5a9a5a' }}> ✓</span>
+                        ) : (
+                          <span
+                            onClick={() => setRegisterTimezone(detectedTz)}
+                            className="cursor-pointer hover:underline"
+                            style={{ color: '#C9A84C' }}
+                          >
+                            {lang === 'ar' ? ' — اضغط للتطبيق' : ' — tap to apply'}
+                          </span>
+                        )}
+                      </p>
+                    );
+                  })()}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full bg-[#C9A84C] hover:bg-[#b0913e] disabled:opacity-50 text-[#0D0D0D] font-bold py-3.5 px-4 rounded-xl transition shadow-xl mt-4"
+                >
+                  {loading ? (lang === 'ar' ? 'جاري الاشتراك...' : 'Joining...') : t('login.button')}
+                </button>
+              </form>
+            </div>
+
+            <div className="mt-6 bg-[#161616] p-4 rounded-2xl border border-white/5 text-center">
+              <h4 className="text-xs font-bold text-[#C9A84C] mb-2">{t('login.existing')}</h4>
+              <div className="flex gap-2 max-w-xs mx-auto">
+                <input 
+                  type="email" 
+                  placeholder={lang === 'ar' ? 'البريد السابق' : 'Previous email'} 
+                  className="bg-[#222] border border-white/5 text-xs text-white rounded-lg px-3 py-1.5 flex-1 focus:outline-none"
+                  onKeyDown={async (e) => {
+                    if (e.key === 'Enter') {
+                      const val = (e.target as HTMLInputElement).value;
+                      if (val) {
+                        setLoading(true);
+                        const exists = mockDb.users.find(u => u.email.toLowerCase() === val.toLowerCase());
+                        if (exists) {
+                          mockDb.currentUser = exists;
+                          mockDb.save();
+                          setRefreshTrigger(p => p + 1);
+                          window.location.hash = '#/';
+                        } else {
+                          alert(lang === 'ar' ? 'البريد الإلكتروني غير مسجل، يرجى الاشتراك!' : 'Email address not found, please sign up!');
+                        }
+                        setLoading(false);
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 2: SCHEDULE / DASHBOARD */}
+        {route === '#/' && currentUser && (
+          <div className="space-y-4 animate-fade-in" ref={scheduleRef}>
+            
+            {/* Compact Header Bar */}
+            <div className="bg-[#121212] border border-[#C9A84C]/20 rounded-2xl px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#C9A84C]/10 border border-[#C9A84C]/30 flex items-center justify-center">
+                  <Calendar className="w-4 h-4 text-[#C9A84C]" />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 block">{t('schedule.today')} {n(currentDay)} {lang === 'ar' ? 'من ٣٠' : 'of 30'}</span>
+                  <span className="text-xs text-[#C9A84C] font-bold">{currentDate}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 bg-[#C9A84C]/10 border border-[#C9A84C]/30 px-3 py-1.5 rounded-full">
+                <Flame className="w-4 h-4 text-[#C9A84C] fill-current animate-bounce" />
+                <span className="text-sm font-black text-[#C9A84C]">{n(userStreak?.current_streak || 0)}</span>
+                <span className="text-[10px] text-[#C9A84C]">{t('schedule.streak')}</span>
+              </div>
+            </div>
+
+            {/* Progress mini-bar */}
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="text-gray-400">{lang === 'ar' ? 'إنجاز اليوم:' : 'Daily Progress:'}</span>
+              <div className="flex-1 bg-[#222] h-1.5 rounded-full overflow-hidden">
+                <div 
+                  className="bg-[#C9A84C] h-full rounded-full transition-all duration-500"
+                  style={{ width: `${(completedCount / 6) * 100}%` }}
+                />
+              </div>
+              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(6)}</span>
+            </div>
+
+            {/* Timeline */}
+            <div className="space-y-2">
+              {timelineItems.map((item, idx) => {
+                if (item.kind === 'now') {
+                  return (
+                    <div key={`now-${idx}`} className="flex items-center gap-3 py-1">
+                      <div className="flex-grow h-[1px] bg-[#C9A84C]/25" />
+                      <span className="text-[10px] font-bold text-[#C9A84C] bg-[#C9A84C]/10 px-2 py-0.5 rounded-full border border-[#C9A84C]/30">
+                        {t('schedule.now')}
+                      </span>
+                      <div className="flex-grow h-[1px] bg-[#C9A84C]/25" />
+                    </div>
+                  );
+                }
+
+                const task = item.task;
+                const state = getTaskState(task, currentTime);
+                const isActive = state === 'active';
+                const isDone = state === 'done';
+                const isExpired = state === 'expired';
+                const minutesLeft = isActive ? getMinutesUntilWindowEnd(task, currentTime) : 0;
+
+                 return (
+                  <div
+                    key={task.id}
+                    ref={isActive ? activeTaskRef : null}
+                    data-active={isActive ? 'true' : 'false'}
+                    className={`relative rounded-xl border transition-all duration-200 overflow-hidden ${
+                      isDone 
+                        ? (task.type === 'spiritual' ? 'bg-[#0a1a0a] border-emerald-500/25' : 'bg-green-950/20 border-green-500/20')
+                        : isExpired 
+                          ? 'bg-[#121212] border-red-500/15 opacity-60' 
+                          : isActive 
+                            ? 'bg-[#161616] border-[#C9A84C]/40 shadow-lg shadow-[#C9A84C]/5' 
+                            : 'bg-[#121212] border-white/5 opacity-50'
+                    }`}
+                    style={{ minHeight: isActive ? '72px' : '56px' }}
+                  >
+                    {/* Left/Right RTL accent bar */}
+                    <div className={`absolute top-0 bottom-0 w-1 ${lang === 'ar' ? 'right-0' : 'left-0'} ${
+                      isDone ? 'bg-green-500' : isExpired ? 'bg-red-500/40' : isActive ? 'bg-[#C9A84C]' : 'bg-gray-600/30'
+                    }`} />
+
+                    <div className={`flex items-center justify-between gap-3 px-3 py-2.5 ${lang === 'ar' ? 'pr-4' : 'pl-4'}`}>
+                      
+                      {/* Left Block: Checkbox (For spiritual tasks) OR Lock/Clock indicator (For others) */}
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        
+                        {/* CHANGE 2 - Beautiful dedicated circular checkbox (40px x 40px) on Spiritual tasks */}
+                        {task.type === 'spiritual' ? (
+                          <button
+                            disabled={!isActive || isDone}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSpiritualComplete(task);
+                            }}
+                            className={`w-10 h-10 rounded-full border-1.5 transition-all duration-200 flex items-center justify-center shrink-0 ${
+                              isDone
+                                ? 'bg-[#C9A84C]/15 border-[#C9A84C] text-[#C9A84C]'
+                                : isActive
+                                  ? 'bg-transparent border-[#C9A84C] hover:bg-[#C9A84C]/5'
+                                  : 'bg-transparent border-gray-600 cursor-not-allowed opacity-50'
+                            }`}
+                          >
+                            {isDone && <Check className="w-5 h-5 text-[#C9A84C]" />}
+                          </button>
+                        ) : (
+                          <div className="shrink-0">
+                            {isDone ? (
+                              <div className="w-6 h-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
+                                <Check className="w-3.5 h-3.5 text-green-400" />
+                              </div>
+                            ) : isExpired ? (
+                              <div className="w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                                <X className="w-3.5 h-3.5 text-red-400" />
+                              </div>
+                            ) : isActive ? (
+                              <div className="w-6 h-6 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
+                                <span className="w-2 h-2 bg-[#C9A84C] rounded-full animate-pulse" />
+                              </div>
+                            ) : (
+                              <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                                <Lock className="w-3 h-3 text-gray-500" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Task Title & Details */}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <TaskTypeIcon type={task.type} />
+                            <span className={`text-[13px] font-bold text-white truncate ${
+                              isDone && task.type === 'spiritual' ? 'line-through decoration-[#C9A84C] opacity-75' : ''
+                            }`}>
+                              {getLocalizedTaskTitle(task, lang)}
+                            </span>
+                            <TaskTypeLabel type={task.type} lang={lang} />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isDone ? (
+                              <span className="text-[10px] text-green-400">
+                                {task.requires_photo && task.photo_url ? (lang === 'ar' ? 'مكتملة بإثبات مصور' : 'Completed with photo') : t('schedule.done')}
+                              </span>
+                            ) : isExpired ? (
+                              <span className="text-[10px] text-red-400">{t('schedule.expired')}</span>
+                            ) : isActive ? (
+                              <span className="text-[10px] text-[#C9A84C]">
+                                {t('schedule.ends_in')} {n(minutesLeft)} {t('schedule.minutes')}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-gray-500">
+                                {t('schedule.locked')} {getLocalizedTaskTime(task.window_start, lang)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* CHANGE 2 - Spiritual task message depending on checked/unchecked state */}
+                          {task.type === 'spiritual' && (
+                            <span className={`text-[11px] block mt-0.5 font-medium ${
+                              isDone ? 'text-[#5a9a5a]' : 'text-[#C9A84C]/60'
+                            }`}>
+                              {isDone ? t('spiritual.confirmed') : t('spiritual.prompt')}
+                            </span>
+                          )}
+
+                          {task.requires_photo && !isDone && !isExpired && (
+                            <span className="text-[10px] text-amber-500/70 block mt-0.5">{getLocalizedTaskNote(task, lang)}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Block: Actions / Upload Proof Button (For physical/mental tasks) */}
+                      <div className="shrink-0 flex items-center">
+                        {/* CHANGE 1 - "+ إثبات" button appears immediately upon being active & remains until complete */}
+                        {isActive && !isDone && task.requires_photo && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveUploadTask(task);
+                            }}
+                            className="bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] text-[11px] font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>{t('schedule.proof')}</span>
+                          </button>
+                        )}
+                        {isDone && task.photo_url && (
+                          <img 
+                            src={task.photo_url} 
+                            alt="" 
+                            className="w-10 h-10 rounded-lg object-cover border border-white/10"
+                          />
+                        )}
+                      </div>
+
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="bg-[#121212]/50 border border-white/5 rounded-2xl p-4 text-center">
+              <p className="text-[11px] text-gray-500">
+                {completedCount === 6 
+                  ? (lang === 'ar' ? '🎉 مبارك! أكملت جميع مهام اليوم الستة. سلسلتك محفوظة!' : '🎉 Congratulations! You have completed all 6 tasks today.') 
+                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٦ مهام اليوم. ${n(6 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 6 tasks today. ${n(6 - completedCount)} remaining.`)}
+              </p>
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW 3: LEADERBOARD PAGE */}
+        {route === '#/leaderboard' && (
+          <div className="space-y-6 animate-fade-in">
+            <div className="text-center max-w-xl mx-auto space-y-3">
+              <div className="w-12 h-12 bg-[#C9A84C]/10 rounded-2xl border border-[#C9A84C]/30 flex items-center justify-center mx-auto text-[#C9A84C]">
+                <Award className="w-6 h-6" />
+              </div>
+              <h2 className="text-2xl md:text-3xl font-black text-white">{lang === 'ar' ? 'لوحة الصدارة والالتزام العامة' : 'Leaderboard and Streaks'}</h2>
+              <p className="text-xs md:text-sm text-gray-400">
+                {lang === 'ar' ? 'لوحة شرف عامة تضم كافة الفرسان النشطين في تحدي البزاوي الـ 30' : 'Honoring the committed champions of the ElBazawi 30-Day challenge.'}
+              </p>
+            </div>
+
+            <div className="max-w-4xl mx-auto space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-5 h-5 text-gray-500 absolute top-1/2 right-4 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={leaderboardSearch}
+                    onChange={(e) => setLeaderboardSearch(e.target.value)}
+                    placeholder={lang === 'ar' ? 'ابحث عن اسم أحد المشتركين...' : 'Search participants...'}
+                    className="w-full bg-[#121212] border border-white/5 rounded-2xl pr-12 pl-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                  />
+                </div>
+                
+                <button 
+                  onClick={() => setRefreshTrigger(p => p + 1)}
+                  className="bg-[#121212] border border-white/10 hover:bg-white/5 text-white text-xs px-4 py-3 rounded-2xl font-bold transition flex items-center justify-center gap-2"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>{lang === 'ar' ? 'تحديث البيانات' : 'Refresh data'}</span>
+                </button>
+              </div>
+
+              {leaderboardUsers.length >= 3 && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 items-end">
+                  <div className="bg-[#151515] border border-gray-400/20 rounded-3xl p-6 text-center shadow-xl md:order-1 relative overflow-hidden order-2">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gray-400" />
+                    <span className="text-3xl block mb-2">🥈</span>
+                    <h4 className="font-extrabold text-white text-base truncate">{leaderboardUsers[1]?.name}</h4>
+                    <div className="mt-4 bg-[#222] rounded-2xl py-3 px-4">
+                      <div className="text-2xl font-bold text-gray-300">{n(leaderboardUsers[1]?.current_streak || 0)} {t('schedule.streak')}</div>
+                    </div>
+                    <div className="mt-3 text-[11px] text-[#C9A84C] font-semibold">
+                      {t('schedule.today')} {n(leaderboardUsers[1]?.day_number)} {lang === 'ar' ? 'من ٣٠' : 'of 30'}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#181818] border-2 border-[#C9A84C] rounded-3xl p-8 text-center shadow-2xl md:order-2 order-1 relative overflow-hidden -translate-y-2 md:-translate-y-4">
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#C9A84C]" />
+                    <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/40 text-[#C9A84C] px-3 py-1 rounded-full text-[10px] font-black inline-block mb-3 tracking-widest uppercase">
+                      {lang === 'ar' ? 'متصدر التحدي 👑' : 'Top Spot 👑'}
+                    </div>
+                    <span className="text-4xl block mb-2">🥇</span>
+                    <h4 className="font-black text-white text-lg truncate">{leaderboardUsers[0]?.name}</h4>
+                    <div className="mt-4 bg-[#C9A84C]/10 rounded-2xl py-4 px-4 border border-[#C9A84C]/25">
+                      <div className="text-3xl font-extrabold text-[#C9A84C]">{n(leaderboardUsers[0]?.current_streak || 0)} {t('schedule.streak')}</div>
+                    </div>
+                    <div className="mt-3 text-xs text-[#C9A84C] font-black">
+                      {t('schedule.today')} {n(leaderboardUsers[0]?.day_number)} {lang === 'ar' ? 'من ٣٠' : 'of 30'}
+                    </div>
+                  </div>
+
+                  <div className="bg-[#151515] border border-amber-800/30 rounded-3xl p-6 text-center shadow-xl md:order-3 relative overflow-hidden order-3">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-amber-800" />
+                    <span className="text-3xl block mb-2">🥉</span>
+                    <h4 className="font-extrabold text-white text-base truncate">{leaderboardUsers[2]?.name}</h4>
+                    <div className="mt-4 bg-[#222] rounded-2xl py-3 px-4">
+                      <div className="text-2xl font-bold text-amber-600">{n(leaderboardUsers[2]?.current_streak || 0)} {t('schedule.streak')}</div>
+                    </div>
+                    <div className="mt-3 text-[11px] text-[#C9A84C] font-semibold">
+                      {t('schedule.today')} {n(leaderboardUsers[2]?.day_number)} {lang === 'ar' ? 'من ٣٠' : 'of 30'}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-[#121212] border border-white/5 rounded-3xl overflow-hidden shadow-xl">
+                <div className="p-5 border-b border-white/5">
+                  <h4 className="font-bold text-white text-sm">{lang === 'ar' ? 'ترتيب المشتركين الكلي' : 'All Participants Rankings'}</h4>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right text-sm">
+                    <thead>
+                      <tr className="bg-[#181818] border-b border-white/5 text-gray-400 font-bold text-xs uppercase text-start">
+                        <th className="py-4 px-6 text-center">{lang === 'ar' ? 'الترتيب' : 'Rank'}</th>
+                        <th className="py-4 px-6">{lang === 'ar' ? 'الاسم الكامل' : 'Full Name'}</th>
+                        <th className="py-4 px-6 text-center">{lang === 'ar' ? 'اليوم بالتحدي' : 'Active Day'}</th>
+                        <th className="py-4 px-6 text-center">{lang === 'ar' ? 'السلسلة الحالية' : 'Current Streak'}</th>
+                        <th className="py-4 px-6 text-center">{lang === 'ar' ? 'أطول سلسلة قياسية' : 'Longest Streak'}</th>
+                        <th className="py-4 px-6 text-center">{lang === 'ar' ? 'إجمالي المهام المنجزة' : 'Total Completed'}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-start">
+                      {leaderboardUsers
+                        .filter(u => u.name.toLowerCase().includes(leaderboardSearch.toLowerCase()))
+                        .map((user, index) => {
+                          const isTop3 = index < 3;
+                          const bgStyle = isTop3 
+                            ? index === 0 
+                              ? 'bg-[#C9A84C]/5 text-[#C9A84C]' 
+                              : index === 1 
+                                ? 'bg-gray-400/5 text-gray-300' 
+                                : 'bg-amber-900/5 text-amber-600'
+                            : 'hover:bg-white/5';
+
+                          return (
+                            <tr key={user.id} className={`transition ${bgStyle}`}>
+                              <td className="py-4 px-6 text-center font-bold">
+                                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : n(index + 1)}
+                              </td>
+                              <td className="py-4 px-6">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-[#222] border border-white/5 flex items-center justify-center font-bold text-xs text-white">
+                                    {user.name.charAt(0)}
+                                  </div>
+                                  <div>
+                                    <span className="font-bold text-white block">{user.name}</span>
+                                    <span className="text-[10px] text-gray-500 block">{lang === 'ar' ? 'منطقة' : 'TZ'}: {user.timezone}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-4 px-6 text-center font-semibold text-gray-300">
+                                {t('schedule.today')} {n(user.day_number)}
+                              </td>
+                              <td className="py-4 px-6 text-center font-black">
+                                <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs ${
+                                  user.current_streak > 0 
+                                    ? 'bg-[#C9A84C]/15 text-[#C9A84C]' 
+                                    : 'bg-red-500/10 text-red-400'
+                                }`}>
+                                  <Flame className="w-3.5 h-3.5 fill-current" />
+                                  {n(user.current_streak)} {lang === 'ar' ? 'أيام' : 'days'}
+                                </span>
+                              </td>
+                              <td className="py-4 px-6 text-center text-gray-400">
+                                {n(user.longest_streak)} {lang === 'ar' ? 'يوم' : 'day'}
+                              </td>
+                              <td className="py-4 px-6 text-center font-bold text-[#C9A84C]">
+                                {n(user.total_completed)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+
+                      {leaderboardUsers.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-gray-500 text-xs">
+                            {lang === 'ar' ? 'لا يوجد مشتركين جاري تصفية البحث...' : 'No users found matching query...'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW 4: ADMIN PANEL PAGE */}
+        {route === '#/admin' && (
+          <div className="space-y-6 animate-fade-in">
+            
+            <div className="bg-[#121212] border border-amber-500/30 rounded-3xl p-6 md:p-8 relative overflow-hidden">
+              <div className="absolute top-0 left-0 right-0 h-1 bg-amber-500" />
+              
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 text-amber-500 font-bold text-xs uppercase tracking-widest">
+                    <Shield className="w-4 h-4" />
+                    <span>{lang === 'ar' ? 'لوحة التحكم الإدارية' : 'Admin Control Panel'}</span>
+                  </div>
+                  <h2 className="text-xl md:text-2xl font-bold text-white">{lang === 'ar' ? 'إدارة المشتركين والإثباتات المصورة' : 'Manage Participants and Proofs'}</h2>
+                  <p className="text-xs text-gray-400">{lang === 'ar' ? 'تتيح لك كمسؤول تفعيل/تعطيل الحسابات، رفض صور إثبات المهام، أو تأكيدها لضبط سلاسل المتسابقين.' : 'Review photo proofs, manage users and lock statuses.'}</p>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  <button 
+                    onClick={() => {
+                      const testId = 'usr_' + Math.random().toString(36).substr(2, 5);
+                      mockDb.users.push({
+                        id: testId,
+                        name: lang === 'ar' ? 'مشترك تجريبي جديد' : 'New Test Participant',
+                        email: `test_${Date.now()}@elbezawi.com`,
+                        whop_id: null,
+                        timezone: 'Asia/Riyadh',
+                        created_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
+                        is_admin: false,
+                        is_active: true
+                      });
+                      mockDb.streaks.push({
+                        id: 'str_' + Math.random().toString(36).substr(2, 5),
+                        user_id: testId,
+                        current_streak: 2,
+                        longest_streak: 3,
+                        last_completed_date: new Date(Date.now() - 24 * 3600 * 1000).toISOString().split('T')[0],
+                        total_completed: 12
+                      });
+                      mockDb.tasks.push(
+                        {
+                          id: 'task_' + Math.random().toString(36).substr(2, 5),
+                          user_id: testId,
+                          day_number: 3,
+                          task_id: 'exercise',
+                          title_ar: 'تمرين ٣٠ دقيقة',
+                          type: 'physical',
+                          window_start: '07:00',
+                          window_end: '12:00',
+                          requires_photo: true,
+                          note_ar: 'أرسل صورة كدليل على الإنجاز',
+                          completed: true,
+                          completed_at: new Date().toISOString(),
+                          photo_url: PRESET_PROOFS[0].url,
+                          rejected: false,
+                          rejection_reason: null,
+                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+                          created_at: new Date().toISOString()
+                        },
+                        {
+                          id: 'task_' + Math.random().toString(36).substr(2, 5),
+                          user_id: testId,
+                          day_number: 3,
+                          task_id: 'reading',
+                          title_ar: 'قراءة ١٠ صفحات',
+                          type: 'mental',
+                          window_start: '10:00',
+                          window_end: '14:00',
+                          requires_photo: true,
+                          note_ar: 'أرسل صورة للكتاب أو الصفحة',
+                          completed: true,
+                          completed_at: new Date().toISOString(),
+                          photo_url: PRESET_PROOFS[1].url,
+                          rejected: false,
+                          rejection_reason: null,
+                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+                          created_at: new Date().toISOString()
+                        },
+                        {
+                          id: 'task_' + Math.random().toString(36).substr(2, 5),
+                          user_id: testId,
+                          day_number: 3,
+                          task_id: 'goals',
+                          title_ar: 'مراجعة الأهداف',
+                          type: 'mental',
+                          window_start: '16:00',
+                          window_end: '20:00',
+                          requires_photo: true,
+                          note_ar: 'صورة لمفكرتك أو تسجيلك',
+                          completed: false,
+                          completed_at: null,
+                          photo_url: null,
+                          rejected: false,
+                          rejection_reason: null,
+                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
+                          created_at: new Date().toISOString()
+                        }
+                      );
+                      mockDb.save();
+                      setRefreshTrigger(p => p + 1);
+                      alert(lang === 'ar' ? 'تمت إضافة مشترك تجريبي جديد مهيأ لإجراء اختبارات الإدارة فوراً!' : 'A test participant has been added for admin review.');
+                    }}
+                    className="bg-[#C9A84C]/10 border border-[#C9A84C]/30 hover:bg-[#C9A84C]/25 text-[#C9A84C] text-xs px-3 py-2 rounded-xl transition font-bold"
+                  >
+                    + {lang === 'ar' ? 'إضافة مشترك للاختبار' : 'Add Test User'}
+                  </button>
+                  
+                  <button 
+                    onClick={() => {
+                      localStorage.clear();
+                      alert(lang === 'ar' ? 'تمت تهيئة وتصفير قواعد البيانات كلياً للبدء من جديد.' : 'Local database has been reset.');
+                      window.location.reload();
+                    }}
+                    className="bg-red-500/10 border border-red-500/30 hover:bg-red-500/25 text-red-400 text-xs px-3 py-2 rounded-xl transition font-bold"
+                  >
+                    {lang === 'ar' ? 'تفريغ الذاكرة' : 'Clear Database'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Admin Tabs */}
+            <div className="flex gap-2 border-b border-white/5 pb-2">
+              <button
+                onClick={() => setAdminTab('users')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  adminTab === 'users' 
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]' 
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {lang === 'ar' ? 'المشتركين' : 'Participants'}
+              </button>
+              <button
+                onClick={() => setAdminTab('photos')}
+                className={`px-4 py-2 rounded-xl text-xs font-bold transition ${
+                  adminTab === 'photos' 
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]' 
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {t('admin.review')} 📸
+              </button>
+            </div>
+
+            {/* TAB: Users */}
+            {adminTab === 'users' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div className="lg:col-span-7 bg-[#121212] border border-white/5 rounded-3xl overflow-hidden">
+                  <div className="p-4 border-b border-white/5 flex items-center justify-between bg-[#161616]">
+                    <h4 className="font-bold text-white text-sm">{lang === 'ar' ? 'كافة المشتركين المسجلين' : 'All Registered Users'}</h4>
+                    <div className="relative w-48">
+                      <Search className="w-4 h-4 text-gray-500 absolute top-1/2 right-3 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={adminSearch}
+                        onChange={(e) => setAdminSearch(e.target.value)}
+                        placeholder={lang === 'ar' ? 'تصفية بالاسم...' : 'Filter by name...'}
+                        className="w-full bg-[#222] border border-white/5 rounded-lg pr-9 pl-3 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right text-xs">
+                      <thead>
+                        <tr className="bg-[#181818] border-b border-white/5 text-gray-400 font-bold uppercase text-start">
+                          <th className="py-3 px-4">{lang === 'ar' ? 'المشترك' : 'User'}</th>
+                          <th className="py-3 px-4 text-center">{lang === 'ar' ? 'اليوم' : 'Day'}</th>
+                          <th className="py-3 px-4 text-center">{lang === 'ar' ? 'السلسلة' : 'Streak'}</th>
+                          <th className="py-3 px-4 text-center">{lang === 'ar' ? 'نسبة الإنجاز' : 'Completion'}</th>
+                          <th className="py-3 px-4 text-center">{lang === 'ar' ? 'الحالة' : 'Status'}</th>
+                          <th className="py-3 px-4 text-center">{lang === 'ar' ? 'الإجراء' : 'Actions'}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 text-start">
+                        {adminUsers
+                          .filter(u => u.name.toLowerCase().includes(adminSearch.toLowerCase()))
+                          .map(user => (
+                            <tr 
+                              key={user.id} 
+                              onClick={() => setSelectedAdminUser(user)}
+                              className={`cursor-pointer transition ${
+                                selectedAdminUser?.id === user.id ? 'bg-[#C9A84C]/10 text-white font-bold' : 'hover:bg-white/5'
+                              }`}
+                            >
+                              <td className="py-3 px-4">
+                                <div>
+                                  <span className="font-bold text-white block text-xs">{user.name}</span>
+                                  <span className="text-[10px] text-gray-500 block truncate max-w-[120px]">{user.email}</span>
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-center">{n(user.day_number)} / {n(30)}</td>
+                              <td className="py-3 px-4 text-center font-bold text-[#C9A84C]">{n(user.current_streak)} {lang === 'ar' ? 'يوم' : 'days'}</td>
+                              <td className="py-3 px-4 text-center">{user.completion_rate}%</td>
+                              <td className="py-3 px-4 text-center">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
+                                  user.is_active ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                                }`}>
+                                  {user.is_active ? (lang === 'ar' ? 'نشط' : 'Active') : (lang === 'ar' ? 'معطل' : 'Disabled')}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <div className="flex items-center justify-center gap-1.5" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => handleAdminToggleUser(user.id)}
+                                    className={`px-2 py-1 rounded text-[10px] font-bold transition ${
+                                      user.is_active 
+                                        ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400' 
+                                        : 'bg-green-500/10 hover:bg-green-500/20 text-green-400'
+                                    }`}
+                                  >
+                                    {user.is_active ? (lang === 'ar' ? 'تعطيل' : 'Disable') : (lang === 'ar' ? 'تنشيط' : 'Enable')}
+                                  </button>
+                                  <button
+                                    onClick={() => setSelectedAdminUser(user)}
+                                    className="bg-white/5 hover:bg-white/10 text-gray-300 p-1 rounded transition"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <div className="lg:col-span-5 space-y-6 text-start">
+                  {selectedAdminUser ? (
+                    <div className="bg-[#121212] border border-[#C9A84C]/30 rounded-3xl p-6 space-y-5 shadow-xl">
+                      <div className="border-b border-white/5 pb-4">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] bg-[#C9A84C]/10 text-[#C9A84C] border border-[#C9A84C]/25 px-2 py-0.5 rounded-full font-bold">
+                            {lang === 'ar' ? 'المشترك المحدد للتعديل' : 'Selected Participant'}
+                          </span>
+                          <button onClick={() => setSelectedAdminUser(null)} className="text-xs text-gray-400 hover:text-white transition">
+                            ✕
+                          </button>
+                        </div>
+                        <h3 className="font-bold text-white text-base mt-2">{selectedAdminUser.name}</h3>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3 bg-[#181818] p-3 rounded-2xl border border-white/5">
+                        <div>
+                          <span className="text-[10px] text-gray-500 block">{t('schedule.streak')}</span>
+                          <span className="text-sm font-bold text-[#C9A84C]">{n(selectedAdminUser.current_streak)} {lang === 'ar' ? 'يوم' : 'days'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-gray-500 block">{lang === 'ar' ? 'المهام الكلية' : 'Total Progress'}</span>
+                          <span className="text-sm font-bold text-white">{t('schedule.today')} {n(selectedAdminUser.day_number)} • {selectedAdminUser.completion_rate}%</span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h4 className="font-bold text-white text-xs">{lang === 'ar' ? `مهام اليوم ${n(selectedAdminUser.day_number)} للمشترك` : `Day ${n(selectedAdminUser.day_number)} tasks`}</h4>
+                        
+                        {selectedAdminUser.tasks && selectedAdminUser.tasks.map((task: any, index: number) => (
+                          <div key={task.id} className="bg-[#1a1a1a] border border-white/5 p-3 rounded-xl space-y-3 text-xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="text-[9px] text-[#C9A84C] block">{lang === 'ar' ? `المهمة ${n(index + 1)}` : `Task ${n(index + 1)}`}</span>
+                                <span className="font-bold text-white block mt-0.5">{getLocalizedTaskTitle(task, lang)}</span>
+                              </div>
+                              <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                                task.completed ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-500'
+                              }`}>
+                                {task.completed ? (lang === 'ar' ? 'مكتملة' : 'Completed') : (lang === 'ar' ? 'قيد الانتظار' : 'Pending')}
+                              </span>
+                            </div>
+
+                            {task.completed && task.photo_url ? (
+                              <div className="space-y-2">
+                                <div className="aspect-[16/9] rounded-lg overflow-hidden bg-black/40 relative border border-white/5">
+                                  <img src={task.photo_url} alt="" className="w-full h-full object-cover" />
+                                </div>
+                                <button
+                                  onClick={() => handleAdminOverride(task.id, false)}
+                                  className="w-full bg-red-500/15 hover:bg-red-500/25 text-red-400 py-1.5 px-3 rounded-lg font-bold text-[10px] transition text-center"
+                                >
+                                  {lang === 'ar' ? 'رفض / إلغاء الإثبات' : 'Reject Proof'}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => handleAdminOverride(task.id, true)}
+                                className="w-full bg-[#C9A84C]/10 hover:bg-[#C9A84C]/20 text-[#C9A84C] py-1.5 px-3 rounded-lg font-bold text-[10px] transition text-center border border-[#C9A84C]/20"
+                              >
+                                {lang === 'ar' ? 'تجاوز المسؤول: وضع كمكتملة تلقائياً' : 'Admin: Mark Complete'}
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-[#121212]/50 border border-white/5 rounded-3xl p-6 text-center space-y-3 py-12">
+                      <HelpCircle className="w-10 h-10 text-gray-600 mx-auto" />
+                      <h4 className="text-sm font-bold text-gray-400">{lang === 'ar' ? 'لم يتم تحديد مشترك لعرض تفاصيله' : 'No participant selected'}</h4>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB: Photo Review */}
+            {adminTab === 'photos' && (
+              <div className="space-y-4 text-start">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-white text-sm">{t('admin.review')}</h3>
+                  <span className="text-[10px] text-gray-500">{n(photoSubmissions.length)} {lang === 'ar' ? 'إثبات مرفوع' : 'proofs uploaded'}</span>
+                </div>
+
+                {photoSubmissions.length === 0 ? (
+                  <div className="bg-[#121212] border border-white/5 rounded-3xl p-12 text-center">
+                    <ImageIcon className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+                    <h4 className="text-sm font-bold text-gray-400">{lang === 'ar' ? 'لا توجد إثباتات مصورة مرفوعة بعد' : 'No photo proofs yet'}</h4>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {photoSubmissions.map((submission) => (
+                      <div key={submission.id} className="bg-[#121212] border border-white/5 rounded-2xl overflow-hidden">
+                        <div className="aspect-square bg-black/40 relative">
+                          <img src={submission.photo_url} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <div className="p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-white">{submission.user_name}</span>
+                            <span className="text-[9px] text-gray-500">{t('schedule.today')} {n(submission.day_number)}</span>
+                          </div>
+                          <span className="text-[10px] text-[#C9A84C] block">{getLocalizedTaskTitle(submission, lang)}</span>
+
+                          {rejectingTaskId === submission.id ? (
+                            <div className="space-y-2 pt-1">
+                              <textarea
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                placeholder={lang === 'ar' ? 'سبب الرفض...' : 'Reason...'}
+                                className="w-full bg-[#1a1a1a] border border-white/10 rounded-lg px-2 py-1.5 text-[11px] text-white focus:outline-none focus:ring-1 focus:ring-red-500 resize-none"
+                                rows={2}
+                              />
+                              <div className="flex gap-2">
+                                <button onClick={() => handleAdminRejectPhoto(submission.id)} className="flex-1 bg-red-500/15 hover:bg-red-500/25 text-red-400 py-1.5 px-2 rounded-lg text-[10px] font-bold transition">
+                                  {lang === 'ar' ? 'تأكيد الرفض' : 'Confirm'}
+                                </button>
+                                <button onClick={() => { setRejectingTaskId(null); setRejectReason(''); }} className="flex-1 bg-white/5 hover:bg-white/10 text-gray-400 py-1.5 px-2 rounded-lg text-[10px] font-bold transition">
+                                  {lang === 'ar' ? 'إلغاء' : 'Cancel'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 pt-1">
+                              <button onClick={() => alert(lang === 'ar' ? 'تم قبول الإثبات ✅' : 'Proof accepted ✅')} className="flex-1 bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20 py-1.5 px-2 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1">
+                                <Check className="w-3 h-3" />
+                                {t('admin.accept')}
+                              </button>
+                              <button onClick={() => { setRejectingTaskId(submission.id); setRejectReason(''); }} className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 py-1.5 px-2 rounded-lg text-[10px] font-bold transition flex items-center justify-center gap-1">
+                                <X className="w-3 h-3" />
+                                {t('admin.reject')}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+          </div>
+        )}
+
+      </main>
+
+      {/* FOOTER */}
+      <footer className="bg-[#0b0b0b] border-t border-white/5 py-8 mt-12 text-center text-xs text-gray-600">
+        <div className="max-w-7xl mx-auto px-4 space-y-3">
+          <p className="font-bold text-gray-500">{lang === 'ar' ? 'تحدي البزاوي الـ 30 © ٢٠٢٦ • تصميم فاخر باللون الذهبي الإسلامي والداكن' : 'ElBezawy 30-Day Challenge © 2026 • Premium Islamic Gold & Dark theme'}</p>
+        </div>
+      </footer>
+
+      {/* MODAL: PROOF UPLOAD */}
+      {activeUploadTask && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
+          <div className="bg-[#161616] border border-[#C9A84C]/35 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl relative">
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#C9A84C]" />
+            
+            <div className="p-6 space-y-5">
+              <div className="flex items-center justify-between border-b border-white/5 pb-3">
+                <h3 className="font-bold text-white text-base">{lang === 'ar' ? 'رفع إثبات إنجاز المهمة' : 'Upload Task Proof'}</h3>
+                <button 
+                  onClick={() => {
+                    setActiveUploadTask(null);
+                    setSelectedFile(null);
+                    setSelectedPresetUrl('');
+                    setUploadError('');
+                  }}
+                  className="text-gray-400 hover:text-white transition"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-[#1e1e1e] p-3 rounded-2xl border border-white/5 text-start">
+                <span className="text-[10px] text-[#C9A84C] font-bold block uppercase">{lang === 'ar' ? 'المهمة المحددة' : 'Selected Task'}</span>
+                <span className="text-sm font-bold text-white block mt-0.5">{getLocalizedTaskTitle(activeUploadTask, lang)}</span>
+              </div>
+
+              <form onSubmit={handleTaskCompleteSubmit} className="space-y-4 text-start">
+                
+                {currentUser?.is_admin && (
+                  <>
+                    <div className="space-y-2">
+                      <label className="block text-xs font-bold text-gray-400">
+                        {lang === 'ar' ? 'صورة سريعة جاهزة للاختبار الفوري' : 'Quick Preset For Admin Testing'}
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {PRESET_PROOFS.map((p, i) => {
+                          const IconComponent = p.icon;
+                          const isSelected = selectedPresetUrl === p.url;
+                          return (
+                            <button
+                              key={i}
+                              type="button"
+                              onClick={() => {
+                                setSelectedPresetUrl(p.url);
+                                setSelectedFile(null);
+                                setUploadError('');
+                              }}
+                              className={`p-2 bg-[#222] border rounded-xl flex flex-col items-center justify-center text-center transition gap-1.5 ${
+                                isSelected 
+                                  ? 'border-[#C9A84C] bg-[#C9A84C]/10 text-[#C9A84C]' 
+                                  : 'border-white/5 text-gray-400 hover:border-white/10 hover:text-white'
+                              }`}
+                            >
+                              <IconComponent className="w-4 h-4 shrink-0" />
+                              <span className="text-[9px] font-bold truncate w-full">{lang === 'ar' ? p.name : p.name_en}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="relative flex py-2 items-center">
+                      <div className="flex-grow border-t border-white/5"></div>
+                      <span className="flex-shrink mx-4 text-gray-500 text-[10px] uppercase font-bold">{lang === 'ar' ? 'أو' : 'OR'}</span>
+                      <div className="flex-grow border-t border-white/5"></div>
+                    </div>
+                  </>
+                )}
+
+                {/* Native File selector */}
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-gray-400">
+                    {lang === 'ar' ? 'رفع صورة إثبات من جهازك' : 'Upload photo from your device'}
+                  </label>
+                  <div className="bg-[#1a1a1a] border border-dashed border-white/10 hover:border-[#C9A84C]/40 rounded-2xl p-4 text-center cursor-pointer relative transition">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setSelectedFile(e.target.files[0]);
+                          setSelectedPresetUrl('');
+                          setUploadError('');
+                        }
+                      }}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <Upload className="w-6 h-6 text-gray-500 mx-auto mb-1.5" />
+                    <span className="text-xs text-gray-400 font-semibold block">
+                      {selectedFile ? selectedFile.name : (lang === 'ar' ? 'اختر ملف صورة (PNG, JPG)' : 'Choose image file (PNG, JPG)')}
+                    </span>
+                    <span className="text-[9px] text-gray-500 mt-0.5 block">{lang === 'ar' ? 'الحد الأقصى للملف: ٥ ميجابايت' : 'Max file size: 5MB'}</span>
+                  </div>
+                </div>
+
+                {/* Validation message */}
+                {validationMessage && (
+                  <div className="bg-[#C9A84C]/10 border border-[#C9A84C]/20 text-[#C9A84C] p-2.5 rounded-xl text-xs flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 shrink-0 animate-spin" />
+                    <span>{validationMessage}</span>
+                  </div>
+                )}
+
+                {/* Error message */}
+                {uploadError && (
+                  <div className="bg-red-500/10 border border-red-500/20 text-red-400 p-2.5 rounded-xl text-xs flex items-center gap-1.5">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>{uploadError}</span>
+                  </div>
+                )}
+
+                {/* Submit & Cancel */}
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveUploadTask(null);
+                      setSelectedFile(null);
+                      setSelectedPresetUrl('');
+                      setUploadError('');
+                      setValidationMessage('');
+                    }}
+                    className="flex-1 bg-[#222] hover:bg-[#333] text-xs text-white py-2.5 rounded-xl font-bold transition"
+                  >
+                    {lang === 'ar' ? 'تراجع' : 'Cancel'}
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUploading}
+                    className="flex-1 bg-[#C9A84C] hover:bg-[#b0913e] disabled:opacity-50 text-[#0D0D0D] py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-center gap-1.5"
+                  >
+                    {isUploading ? (lang === 'ar' ? 'جاري الحفظ والرفع...' : 'Uploading...') : (lang === 'ar' ? 'حفظ وإكمال المهمة ✅' : 'Submit Proof ✅')}
+                  </button>
+                </div>
+
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Chat Widget */}
+      <ChatWidget />
+
+    </div>
+  );
+}
