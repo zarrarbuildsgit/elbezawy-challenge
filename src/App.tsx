@@ -16,7 +16,7 @@ import {
 import ChatWidget from './components/ChatWidget';
 import { useLanguage } from './hooks/useLanguage';
 import LanguageToggle from './components/LanguageToggle';
-import { startWhopLogin, getWhopUser, clearWhopUser, refreshWhopToken, isTokenExpired } from './lib/whop';
+import { startWhopLogin, getWhopUser, clearWhopUser, refreshWhopToken, isTokenExpired, adminBypassLogin } from './lib/whop';
 
 const PRESET_PROOFS = [
   {
@@ -89,6 +89,10 @@ export default function App() {
   const [todayTasks, setTodayTasks] = useState<any[]>([]);
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [showSettings, setShowSettings] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminLoginEmail, setAdminLoginEmail] = useState('');
+  const [adminLoginPassword, setAdminLoginPassword] = useState('');
+  const [adminLoginError, setAdminLoginError] = useState('');
   
   // App-wide loading & trigger states
   const [loading, setLoading] = useState<boolean>(true);
@@ -674,6 +678,52 @@ export default function App() {
                   {lang === 'ar' ? 'فشل تسجيل الدخول. يرجى المحاولة مرة أخرى.' : 'Login failed. Please try again.'}
                 </div>
               )}
+
+              {/* Hidden admin bypass — only visible when showAdminLogin is true */}
+              {!showAdminLogin ? (
+                <button
+                  onClick={() => setShowAdminLogin(true)}
+                  className="mt-6 text-[10px] text-gray-700 hover:text-gray-500 transition"
+                >
+                  ·
+                </button>
+              ) : (
+                <div className="mt-6 border-t border-white/5 pt-4 space-y-2 text-left">
+                  <p className="text-[10px] text-gray-500 text-center mb-2">Admin Access</p>
+                  <input
+                    type="email"
+                    value={adminLoginEmail}
+                    onChange={e => { setAdminLoginEmail(e.target.value); setAdminLoginError(''); }}
+                    placeholder="admin email"
+                    className="w-full bg-[#181818] border border-white/10 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                  />
+                  <input
+                    type="password"
+                    value={adminLoginPassword}
+                    onChange={e => { setAdminLoginPassword(e.target.value); setAdminLoginError(''); }}
+                    placeholder="password"
+                    className="w-full bg-[#181818] border border-white/10 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
+                  />
+                  {adminLoginError && (
+                    <p className="text-[10px] text-red-400 text-center">{adminLoginError}</p>
+                  )}
+                  <button
+                    onClick={async () => {
+                      const ok = await adminBypassLogin(adminLoginEmail, adminLoginPassword);
+                      if (ok) {
+                        setRefreshTrigger(p => p + 1);
+                        window.location.hash = '#/';
+                      } else {
+                        setAdminLoginError('Invalid credentials');
+                        setAdminLoginPassword('');
+                      }
+                    }}
+                    className="w-full bg-white/5 hover:bg-white/10 text-gray-300 py-2 rounded-lg text-xs font-bold transition"
+                  >
+                    Enter
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1065,95 +1115,6 @@ export default function App() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
-                  <button 
-                    onClick={() => {
-                      const testId = 'usr_' + Math.random().toString(36).substr(2, 5);
-                      mockDb.users.push({
-                        id: testId,
-                        name: lang === 'ar' ? 'مشترك تجريبي جديد' : 'New Test Participant',
-                        email: `test_${Date.now()}@elbezawi.com`,
-                        whop_id: null,
-                        timezone: 'Asia/Riyadh',
-                        created_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
-                        is_admin: false,
-                        is_active: true
-                      });
-                      mockDb.streaks.push({
-                        id: 'str_' + Math.random().toString(36).substr(2, 5),
-                        user_id: testId,
-                        current_streak: 2,
-                        longest_streak: 3,
-                        last_completed_date: new Date(Date.now() - 24 * 3600 * 1000).toISOString().split('T')[0],
-                        total_completed: 12
-                      });
-                      mockDb.tasks.push(
-                        {
-                          id: 'task_' + Math.random().toString(36).substr(2, 5),
-                          user_id: testId,
-                          day_number: 3,
-                          task_id: 'exercise',
-                          title_ar: 'تمرين ٣٠ دقيقة',
-                          type: 'physical',
-                          window_start: '07:00',
-                          window_end: '12:00',
-                          requires_photo: true,
-                          note_ar: 'أرسل صورة كدليل على الإنجاز',
-                          completed: true,
-                          completed_at: new Date().toISOString(),
-                          photo_url: PRESET_PROOFS[0].url,
-                          rejected: false,
-                          rejection_reason: null,
-                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-                          created_at: new Date().toISOString()
-                        },
-                        {
-                          id: 'task_' + Math.random().toString(36).substr(2, 5),
-                          user_id: testId,
-                          day_number: 3,
-                          task_id: 'reading',
-                          title_ar: 'قراءة ١٠ صفحات',
-                          type: 'mental',
-                          window_start: '10:00',
-                          window_end: '14:00',
-                          requires_photo: true,
-                          note_ar: 'أرسل صورة للكتاب أو الصفحة',
-                          completed: true,
-                          completed_at: new Date().toISOString(),
-                          photo_url: PRESET_PROOFS[1].url,
-                          rejected: false,
-                          rejection_reason: null,
-                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-                          created_at: new Date().toISOString()
-                        },
-                        {
-                          id: 'task_' + Math.random().toString(36).substr(2, 5),
-                          user_id: testId,
-                          day_number: 3,
-                          task_id: 'goals',
-                          title_ar: 'مراجعة الأهداف',
-                          type: 'mental',
-                          window_start: '16:00',
-                          window_end: '20:00',
-                          requires_photo: true,
-                          note_ar: 'صورة لمفكرتك أو تسجيلك',
-                          completed: false,
-                          completed_at: null,
-                          photo_url: null,
-                          rejected: false,
-                          rejection_reason: null,
-                          deadline_utc: new Date(Date.now() + 12 * 3600 * 1000).toISOString(),
-                          created_at: new Date().toISOString()
-                        }
-                      );
-                      mockDb.save();
-                      setRefreshTrigger(p => p + 1);
-                      alert(lang === 'ar' ? 'تمت إضافة مشترك تجريبي جديد مهيأ لإجراء اختبارات الإدارة فوراً!' : 'A test participant has been added for admin review.');
-                    }}
-                    className="bg-[#C9A84C]/10 border border-[#C9A84C]/30 hover:bg-[#C9A84C]/25 text-[#C9A84C] text-xs px-3 py-2 rounded-xl transition font-bold"
-                  >
-                    + {lang === 'ar' ? 'إضافة مشترك للاختبار' : 'Add Test User'}
-                  </button>
-                  
                   <button 
                     onClick={() => {
                       localStorage.clear();

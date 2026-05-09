@@ -1,6 +1,13 @@
 const WHOP_CLIENT_ID = (import.meta as any).env?.VITE_WHOP_CLIENT_ID || '';
 const WHOP_REDIRECT_URI = (import.meta as any).env?.VITE_WHOP_REDIRECT_URI || '';
 
+// Must match ADMIN_EMAILS in supabase.ts exactly
+const ADMIN_EMAILS = [
+  'muhummadzarrar09@gmail.com',
+  'muhummadzarrar99@gmail.com',
+  'sinz.lumi@icloud.com'
+];
+
 function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes))
     .replace(/[+/=]/g, (c) => ({ '+': '-', '/': '_', '=': '' }[c]!));
@@ -22,7 +29,7 @@ export async function startWhopLogin(): Promise<void> {
   const nonce = randomString(16);
   const codeChallenge = await sha256(codeVerifier);
 
-  // Store verifier in cookie — readable by server callback
+  // SameSite=Lax required — OAuth redirect is cross-site, Strict blocks it
   document.cookie = `whop_pkce_verifier=${encodeURIComponent(codeVerifier)}; path=/; max-age=600; samesite=lax; secure`;
   sessionStorage.setItem('whop_oauth_state', state);
 
@@ -51,7 +58,7 @@ export interface WhopUser {
 }
 
 export function getWhopUser(): WhopUser | null {
-  const match = document.cookie.match(/whop_user=([^;]+)/);
+  const match = document.cookie.match(/(?:^|;\s*)whop_user=([^;]+)/);
   if (!match) return null;
   try {
     return JSON.parse(decodeURIComponent(match[1]));
@@ -61,14 +68,14 @@ export function getWhopUser(): WhopUser | null {
 }
 
 export function clearWhopUser(): void {
-  document.cookie = 'whop_user=; path=/; max-age=0';
+  document.cookie = 'whop_user=; path=/; max-age=0; samesite=lax';
 }
 
 export function isTokenExpired(): boolean {
   const user = getWhopUser();
   if (!user) return true;
   const ageSeconds = (Date.now() - user.obtained_at) / 1000;
-  return ageSeconds > 3300; // refresh 5 min before 1hr expiry
+  return ageSeconds > 3300;
 }
 
 export async function refreshWhopToken(): Promise<boolean> {
@@ -99,8 +106,23 @@ export async function refreshWhopToken(): Promise<boolean> {
       obtained_at: Date.now(),
     };
 
-    document.cookie = `whop_user=${encodeURIComponent(JSON.stringify(updated))}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=strict`;
+    document.cookie = `whop_user=${encodeURIComponent(JSON.stringify(updated))}; path=/; max-age=${60 * 60 * 24 * 30}; samesite=lax; secure`;
     return true;
+  } catch {
+    return false;
+  }
+}
+
+// Admin bypass — calls server-side endpoint, password never touches the browser
+export async function adminBypassLogin(email: string, password: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/auth/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+
+    return res.ok;
   } catch {
     return false;
   }
