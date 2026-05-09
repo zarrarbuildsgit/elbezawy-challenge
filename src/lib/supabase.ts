@@ -943,27 +943,31 @@ export const db = {
         // Upload to Supabase Storage or fallback to base64
         if (supabase) {
           try {
-            const fileExt = photoFile.name.split('.').pop();
+            const fileExt = photoFile.name.split('.').pop() || 'jpg';
             const fileName = `${userId}_d${dayNumber}_${Date.now()}.${fileExt}`;
             const { data, error } = await supabase.storage
               .from('proofs')
-              .upload(fileName, photoFile);
+              .upload(fileName, photoFile, { upsert: true });
 
-            if (!error && data) {
+            if (error) {
+              console.warn('Supabase storage error:', error.message, '— falling back to base64');
+            } else if (data) {
               const { data: urlData } = supabase.storage
                 .from('proofs')
                 .getPublicUrl(fileName);
               photoUrl = urlData.publicUrl;
             }
           } catch (e) {
-            console.warn("Supabase storage upload fail, using base64 mock:", e);
+            console.warn('Supabase storage upload failed, using base64:', e);
           }
         }
 
+        // Always fall back to base64 if no URL yet
         if (!photoUrl) {
-          photoUrl = await new Promise((resolve) => {
+          photoUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('Failed to read file'));
             reader.readAsDataURL(photoFile as File);
           });
         }

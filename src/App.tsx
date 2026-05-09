@@ -332,8 +332,14 @@ export default function App() {
           setSelectedPresetUrl('');
           setRefreshTrigger(p => p + 1);
         }
-      } catch (err) {
-        setUploadError(lang === 'ar' ? 'حدث خطأ أثناء حفظ الإثبات، حاول ثانية.' : 'An error occurred while uploading. Please try again.');
+      } catch (err: any) {
+        console.error('Upload error:', err);
+        const msg = err?.message || String(err) || 'Unknown error';
+        setUploadError(
+          lang === 'ar'
+            ? `فشل رفع الإثبات: ${msg}`
+            : `Upload failed: ${msg}`
+        );
       } finally {
         setIsUploading(false);
         setValidationMessage('');
