@@ -5,7 +5,7 @@ import {
   LogOut, Search, Clock, HelpCircle, RefreshCw, Eye,
   Check, X, Image as ImageIcon, Heart, Settings
 } from 'lucide-react';
-import { db, mockDb } from './lib/supabase';
+import { db, mockDb, clearPlaceholderData } from './lib/supabase';
 import { 
   detectTimezone, 
   formatTimeEastern,
@@ -83,6 +83,8 @@ function TaskTypeLabel({ type, lang }: { type: string; lang: 'ar' | 'en' }) {
 
 export default function App() {
   const { lang, t, n } = useLanguage();
+  // Clear stale placeholder data on first load
+  useEffect(() => { clearPlaceholderData(); }, []);
   const [settingsTimezone, setSettingsTimezone] = useState(detectTimezone());
   const [route, setRoute] = useState<string>(window.location.hash || '#/');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -991,7 +993,7 @@ export default function App() {
                 </button>
               </div>
 
-              {leaderboardUsers.length >= 3 && (
+              {leaderboardUsers.filter(u => !u.email?.includes("@elbezawy.com")).length === 0 && leaderboardUsers.length >= 3 ? null : leaderboardUsers.length >= 3 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 py-6 items-end">
                   <div className="bg-[#151515] border border-gray-400/20 rounded-3xl p-6 text-center shadow-xl md:order-1 relative overflow-hidden order-2">
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gray-400" />
@@ -1105,8 +1107,16 @@ export default function App() {
 
                       {leaderboardUsers.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-gray-500 text-xs">
-                            {lang === 'ar' ? 'لا يوجد مشتركين جاري تصفية البحث...' : 'No users found matching query...'}
+                          <td colSpan={6} className="py-12 text-center text-gray-500 text-sm">
+                            <div className="flex flex-col items-center gap-2">
+                              <span className="text-3xl">🏆</span>
+                              <span className="font-bold text-gray-400">
+                                {lang === 'ar' ? 'لا يوجد مشتركون بعد' : 'No participants yet'}
+                              </span>
+                              <span className="text-xs text-gray-600">
+                                {lang === 'ar' ? 'سيظهر المشتركون هنا بعد تسجيل دخولهم' : 'Participants will appear here after they sign in'}
+                              </span>
+                            </div>
                           </td>
                         </tr>
                       )}
@@ -1176,8 +1186,8 @@ export default function App() {
 
             {/* TAB: Users */}
             {adminTab === 'users' && (
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-                <div className="lg:col-span-7 bg-[#121212] border border-white/5 rounded-3xl overflow-hidden">
+              <div className="grid grid-cols-1 gap-6">
+                <div className="bg-[#121212] border border-white/5 rounded-3xl overflow-hidden">
                   <div className="p-4 border-b border-white/5 flex items-center justify-between bg-[#161616]">
                     <h4 className="font-bold text-white text-sm">{lang === 'ar' ? 'كافة المشتركين المسجلين' : 'All Registered Users'}</h4>
                     <div className="relative w-48">
@@ -1218,7 +1228,7 @@ export default function App() {
                               <td className="py-3 px-4">
                                 <div>
                                   <span className="font-bold text-white block text-xs">{user.name}</span>
-                                  <span className="text-[10px] text-gray-500 block truncate max-w-[120px]">{user.email}</span>
+                                  <span className="text-[10px] text-gray-500 block truncate max-w-[200px]">{user.email}</span>
                                 </div>
                               </td>
                               <td className="py-3 px-4 text-center">{n(user.day_number)} / {n(30)}</td>
@@ -1258,7 +1268,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="lg:col-span-5 space-y-6 text-start">
+                <div className="space-y-6 text-start">
                   {selectedAdminUser ? (
                     <div className="bg-[#121212] border border-[#C9A84C]/30 rounded-3xl p-6 space-y-5 shadow-xl">
                       <div className="border-b border-white/5 pb-4">

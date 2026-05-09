@@ -78,29 +78,8 @@ const DEFAULT_KNOWLEDGE_BASE = [
 ];
 
 // Mock Users and Streaks for interactive presentation
-const DEFAULT_MOCK_USERS = [
-  { id: 'usr-1', name: 'أحمد الهاشمي', email: 'ahmed@elbezawy.com', whop_id: 'whop_ahmed', timezone: 'Asia/Riyadh', created_at: new Date(Date.now() - 28 * 24 * 3600 * 1000).toISOString(), is_admin: true, is_active: true },
-  { id: 'usr-2', name: 'ياسين بن علي', email: 'yassin@elbezawy.com', whop_id: 'whop_yassin', timezone: 'Africa/Casablanca', created_at: new Date(Date.now() - 24 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-3', name: 'عمر الفاروق', email: 'omar@elbezawy.com', whop_id: 'whop_omar', timezone: 'Asia/Dubai', created_at: new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-4', name: 'فاطمة الزهراء', email: 'fatima@elbezawy.com', whop_id: 'whop_fatima', timezone: 'Africa/Cairo', created_at: new Date(Date.now() - 18 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-5', name: 'سارة العتيبي', email: 'sarah@elbezawy.com', whop_id: null, timezone: 'Asia/Riyadh', created_at: new Date(Date.now() - 15 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-6', name: 'محمد المغربي', email: 'med.magh@elbezawy.com', whop_id: null, timezone: 'Africa/Casablanca', created_at: new Date(Date.now() - 12 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-7', name: 'خالد البلوشي', email: 'khaled.b@elbezawy.com', whop_id: null, timezone: 'Asia/Muscat', created_at: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-8', name: 'مريم الشحي', email: 'maryam.s@elbezawy.com', whop_id: null, timezone: 'Asia/Dubai', created_at: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-  { id: 'usr-9', name: 'عبد الله الجزائري', email: 'abdullah@elbezawy.com', whop_id: null, timezone: 'Africa/Algiers', created_at: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(), is_admin: false, is_active: true },
-];
-
-const DEFAULT_MOCK_STREAKS = [
-  { id: 'str-1', user_id: 'usr-1', current_streak: 28, longest_streak: 28, last_completed_date: new Date(Date.now() - 12 * 3600 * 1000).toISOString().split('T')[0], total_completed: 168 },
-  { id: 'str-2', user_id: 'usr-2', current_streak: 24, longest_streak: 24, last_completed_date: new Date(Date.now() - 14 * 3600 * 1000).toISOString().split('T')[0], total_completed: 144 },
-  { id: 'str-3', user_id: 'usr-3', current_streak: 21, longest_streak: 21, last_completed_date: new Date(Date.now() - 15 * 3600 * 1000).toISOString().split('T')[0], total_completed: 126 },
-  { id: 'str-4', user_id: 'usr-4', current_streak: 18, longest_streak: 18, last_completed_date: new Date(Date.now() - 18 * 3600 * 1000).toISOString().split('T')[0], total_completed: 108 },
-  { id: 'str-5', user_id: 'usr-5', current_streak: 15, longest_streak: 15, last_completed_date: new Date(Date.now() - 20 * 3600 * 1000).toISOString().split('T')[0], total_completed: 90 },
-  { id: 'str-6', user_id: 'usr-6', current_streak: 12, longest_streak: 12, last_completed_date: new Date(Date.now() - 22 * 3600 * 1000).toISOString().split('T')[0], total_completed: 72 },
-  { id: 'str-7', user_id: 'usr-7', current_streak: 8, longest_streak: 8, last_completed_date: new Date(Date.now() - 21 * 3600 * 1000).toISOString().split('T')[0], total_completed: 48 },
-  { id: 'str-8', user_id: 'usr-8', current_streak: 0, longest_streak: 5, last_completed_date: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString().split('T')[0], total_completed: 24 },
-  { id: 'str-9', user_id: 'usr-9', current_streak: 3, longest_streak: 3, last_completed_date: new Date(Date.now() - 16 * 3600 * 1000).toISOString().split('T')[0], total_completed: 18 },
-];
+const DEFAULT_MOCK_USERS: any[] = [];
+const DEFAULT_MOCK_STREAKS: any[] = [];
 
 // Helper to load or initialize mock database
 const getLocalData = (key: string, defaultData: any) => {
@@ -122,6 +101,28 @@ const setLocalData = (key: string, data: any) => {
     localStorage.setItem(`elbezawi_${key}`, JSON.stringify(data));
   }
 };
+
+// Clear stale placeholder mock data from localStorage on first run
+export function clearPlaceholderData() {
+  if (typeof window === 'undefined') return;
+  const users = getLocalData('users', []);
+  const placeholderEmails = [
+    'ahmed@elbezawy.com', 'yassin@elbezawy.com', 'omar@elbezawy.com',
+    'fatima@elbezawy.com', 'sarah@elbezawy.com', 'med.magh@elbezawy.com',
+    'khaled.b@elbezawy.com', 'maryam.s@elbezawy.com', 'abdullah@elbezawy.com'
+  ];
+  const hasPlaceholders = users.some((u: any) => placeholderEmails.includes(u.email));
+  if (hasPlaceholders) {
+    const realUsers = users.filter((u: any) => !placeholderEmails.includes(u.email));
+    localStorage.setItem('elbezawi_users', JSON.stringify(realUsers));
+    // Clean up streaks for placeholder users too
+    const streaks = getLocalData('streaks', []);
+    const placeholderIds = ['usr-1','usr-2','usr-3','usr-4','usr-5','usr-6','usr-7','usr-8','usr-9'];
+    const realStreaks = streaks.filter((s: any) => !placeholderIds.includes(s.user_id));
+    localStorage.setItem('elbezawi_streaks', JSON.stringify(realStreaks));
+    console.log('Cleared placeholder mock data');
+  }
+}
 
 // Check if a task is locked (deadline passed)
 export const isTaskLocked = (deadlineUtcString: string): boolean => {
@@ -289,7 +290,7 @@ function parseTiffDate(data: Uint8Array): Date | null {
 // ---------- AI VISION VALIDATION VIA OPENROUTER ----------
 
 /**
- * Validate a photo with OpenRouter using nvidia/nemotron-nano-12b-v2-vl:free.
+ * Validate a photo with OpenRouter using google/gemma-3-12b-it:free.
  * Returns { approved, reason }.
  */
 export async function validatePhotoWithAI(
@@ -327,7 +328,7 @@ export async function validatePhotoWithAI(
         'X-Title': 'ElBezawy Challenge'
       },
       body: JSON.stringify({
-        model: 'nvidia/nemotron-nano-12b-v2-vl:free',
+        model: 'google/gemma-3-12b-it:free',
         messages: [
           {
             role: 'user',
