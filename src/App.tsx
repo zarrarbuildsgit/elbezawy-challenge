@@ -701,6 +701,18 @@ export default function App() {
                     type="password"
                     value={adminLoginPassword}
                     onChange={e => { setAdminLoginPassword(e.target.value); setAdminLoginError(''); }}
+                    onKeyDown={async (e) => {
+                      if (e.key === 'Enter') {
+                        const ok = await adminBypassLogin(adminLoginEmail, adminLoginPassword);
+                        if (ok) {
+                          setRefreshTrigger(p => p + 1);
+                          window.location.hash = '#/';
+                        } else {
+                          setAdminLoginError('Invalid credentials');
+                          setAdminLoginPassword('');
+                        }
+                      }
+                    }}
                     placeholder="password"
                     className="w-full bg-[#181818] border border-white/10 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:ring-1 focus:ring-[#C9A84C]"
                   />
@@ -708,7 +720,10 @@ export default function App() {
                     <p className="text-[10px] text-red-400 text-center">{adminLoginError}</p>
                   )}
                   <button
+                    type="button"
                     onClick={async () => {
+                      if (!adminLoginEmail || !adminLoginPassword) return;
+                      setAdminLoginError('');
                       const ok = await adminBypassLogin(adminLoginEmail, adminLoginPassword);
                       if (ok) {
                         setRefreshTrigger(p => p + 1);
@@ -718,7 +733,7 @@ export default function App() {
                         setAdminLoginPassword('');
                       }
                     }}
-                    className="w-full bg-white/5 hover:bg-white/10 text-gray-300 py-2 rounded-lg text-xs font-bold transition"
+                    className="w-full bg-[#C9A84C]/20 hover:bg-[#C9A84C]/30 text-[#C9A84C] border border-[#C9A84C]/30 py-2 rounded-lg text-xs font-bold transition"
                   >
                     Enter
                   </button>
