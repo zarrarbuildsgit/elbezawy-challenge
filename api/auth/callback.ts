@@ -32,8 +32,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!tokenRes.ok) {
-      const err = await tokenRes.json().catch(() => ({}));
-      return res.redirect('/#/login?error=' + encodeURIComponent(err.error_description || 'token_exchange_failed'));
+      const errText = await tokenRes.text();
+      console.error('Token exchange failed:', tokenRes.status, errText);
+      return res.redirect('/#/login?error=token_exchange_failed');
     }
 
     const tokens = await tokenRes.json();
@@ -43,6 +44,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!userRes.ok) {
+      console.error('Userinfo failed:', userRes.status);
       return res.redirect('/#/login?error=userinfo_failed');
     }
 
@@ -58,13 +60,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       obtained_at: Date.now(),
     };
 
-    const isProd = process.env.NODE_ENV === 'production';
     const cookieValue = encodeURIComponent(JSON.stringify(userData));
     const maxAge = 60 * 60 * 24 * 30;
 
+    // SameSite=Lax — required for cross-site redirects from OAuth providers
+    // SameSite=Strict breaks because the redirect FROM Whop is cross-site
     res.setHeader('Set-Cookie', [
-      `whop_user=${cookieValue}; Path=/; Max-Age=${maxAge}; SameSite=Strict${isProd ? '; Secure' : ''}`,
-      `whop_pkce_verifier=; Path=/; Max-Age=0`,
+      `whop_user=${cookieValue}; Path=/; Max-Age=${maxAge}; SameSite=Lax; Secure`,
+      `whop_pkce_verifier=; Path=/; Max-Age=0; SameSite=Lax`,
     ]);
 
     return res.redirect('/#/');

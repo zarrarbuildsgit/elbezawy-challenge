@@ -23,7 +23,7 @@ export async function startWhopLogin(): Promise<void> {
   const codeChallenge = await sha256(codeVerifier);
 
   // Store verifier in cookie — readable by server callback
-  document.cookie = `whop_pkce_verifier=${encodeURIComponent(codeVerifier)}; path=/; max-age=600; samesite=strict`;
+  document.cookie = `whop_pkce_verifier=${encodeURIComponent(codeVerifier)}; path=/; max-age=600; samesite=lax; secure`;
   sessionStorage.setItem('whop_oauth_state', state);
 
   const params = new URLSearchParams({
