@@ -23,9 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Server misconfigured' });
   }
 
-  // Both email AND password must match
   if (!ADMIN_EMAILS.includes(email.toLowerCase()) || password !== ADMIN_PASSWORD) {
-    // Same error for both cases — never reveal which one failed
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 
@@ -40,11 +38,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   const cookieValue = encodeURIComponent(JSON.stringify(userData));
-  const maxAge = 60 * 60 * 24; // 24 hours only for admin bypass
+  const maxAge = 60 * 60 * 24;
 
+  // No HttpOnly — React needs to read this cookie client-side
+  // No Secure flag in case running on http locally
   res.setHeader('Set-Cookie',
-    `whop_user=${cookieValue}; Path=/; Max-Age=${maxAge}; SameSite=Lax; Secure; HttpOnly=false`
+    `whop_user=${cookieValue}; Path=/; Max-Age=${maxAge}; SameSite=Lax`
   );
 
-  return res.status(200).json({ ok: true });
+  // Return the user data directly so client can also store it if cookie fails
+  return res.status(200).json({ ok: true, user: userData });
 }

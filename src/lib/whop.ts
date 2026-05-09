@@ -122,7 +122,18 @@ export async function adminBypassLogin(email: string, password: string): Promise
       body: JSON.stringify({ email, password }),
     });
 
-    return res.ok;
+    if (!res.ok) return false;
+
+    // Server sets the cookie, but also set it client-side as fallback
+    // in case the Set-Cookie header is blocked by browser quirks
+    const data = await res.json();
+    if (data.user) {
+      const cookieValue = encodeURIComponent(JSON.stringify(data.user));
+      const maxAge = 60 * 60 * 24;
+      document.cookie = `whop_user=${cookieValue}; path=/; max-age=${maxAge}; samesite=lax`;
+    }
+
+    return true;
   } catch {
     return false;
   }
