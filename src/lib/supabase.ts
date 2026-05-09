@@ -912,10 +912,14 @@ export const db = {
       }
 
       if (photoFile instanceof File) {
-        // 1️⃣ Perceptual hash duplicate check
-        const dupResult = await isPhotoDuplicate(photoFile, userId);
-        if (dupResult.isDuplicate) {
-          return { error: 'تم رفض الصورة — يبدو أنك رفعت هذه الصورة من قبل. يجب أن تكون كل إثبات صورة جديدة ومختلفة.' };
+        // 1️⃣ Perceptual hash duplicate check (skip silently if hashing fails)
+        try {
+          const dupResult = await isPhotoDuplicate(photoFile, userId);
+          if (dupResult.isDuplicate) {
+            return { error: 'تم رفض الصورة — يبدو أنك رفعت هذه الصورة من قبل. يجب أن تكون كل إثبات صورة جديدة ومختلفة.' };
+          }
+        } catch (hashErr) {
+          console.warn('Perceptual hash failed, skipping duplicate check:', hashErr);
         }
 
         // 2️⃣ EXIF timestamp check
