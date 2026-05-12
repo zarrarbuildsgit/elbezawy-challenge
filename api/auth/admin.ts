@@ -3,7 +3,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const ADMIN_EMAILS = [
   'muhummadzarrar09@gmail.com',
   'muhummadzarrar99@gmail.com',
-  'sinz.lumi@icloud.com'
+  'sinz.lumi@icloud.com',
+  'elbezawyabdalla@gmail.com'
 ];
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
