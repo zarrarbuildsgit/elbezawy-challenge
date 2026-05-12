@@ -14,6 +14,7 @@ import {
   buildTimelineItems
 } from './lib/tasks';
 import ChatWidget from './components/ChatWidget';
+import ScheduleBuilder from './components/ScheduleBuilder';
 import { useLanguage } from './hooks/useLanguage';
 import LanguageToggle from './components/LanguageToggle';
 import { startWhopLogin, getWhopUser, clearWhopUser, refreshWhopToken, isTokenExpired, adminBypassLogin } from './lib/whop';
@@ -444,6 +445,16 @@ export default function App() {
                 }`}
               >
                 {lang === 'ar' ? 'الجدول اليومي' : 'Daily Schedule'}
+              </a>
+              <a 
+                href="#/schedule" 
+                className={`px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition ${
+                  route === '#/schedule' 
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]' 
+                    : 'text-gray-400 hover:text-white hover:bg-[#C9A84C]/5'
+                }`}
+              >
+                {lang === 'ar' ? 'جدولي 📅' : 'My Schedule 📅'}
               </a>
               <a 
                 href="#/leaderboard" 
@@ -958,7 +969,14 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 3: LEADERBOARD PAGE */}
+        {/* VIEW 3: MY SCHEDULE (ScheduleBuilder) */}
+        {route === '#/schedule' && currentUser && (
+          <div className="animate-fade-in">
+            <ScheduleBuilder userId={currentUser.id} lang={lang} />
+          </div>
+        )}
+
+        {/* VIEW 4: LEADERBOARD PAGE */}
         {route === '#/leaderboard' && (
           <div className="space-y-6 animate-fade-in">
             <div className="text-center max-w-xl mx-auto space-y-3">
