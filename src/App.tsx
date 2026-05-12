@@ -166,17 +166,31 @@ export default function App() {
     loadUser();
   }, [refreshTrigger]);
 
-  // Update current time every 10 seconds + check streak breaks
+  // Update current time every second — smooth countdown + Now marker
   useEffect(() => {
+    const interval = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Check streak breaks every 30 seconds
+  useEffect(() => {
+    if (!currentUser) return;
     const interval = setInterval(() => {
-      const now = new Date();
-      setCurrentTime(now);
-      
-      if (currentUser) {
-        const dayNumber = mockDb.getDayNumber(currentUser);
-        mockDb.checkExpiredTasksAndBreakStreak(currentUser.id, dayNumber);
-      }
-    }, 10000);
+      const dayNumber = mockDb.getDayNumber(currentUser);
+      mockDb.checkExpiredTasksAndBreakStreak(currentUser.id, dayNumber);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  // Auto-refresh todayTasks every 30s — picks up admin changes, proof rejections, external completions
+  useEffect(() => {
+    if (!currentUser) return;
+    const interval = setInterval(async () => {
+      try {
+        const tasks = await db.getOrCreateTodayTasks(currentUser.id, currentUser.timezone);
+        setTodayTasks(tasks);
+      } catch (_) { /* silent — don't disrupt UI on background refresh error */ }
+    }, 30000);
     return () => clearInterval(interval);
   }, [currentUser]);
 
