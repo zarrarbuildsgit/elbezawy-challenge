@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { getDailyTasks, CORE_TASK_IDS, detectTimezone } from './tasks';
+import { getDailyTasks, CORE_TASK_IDS, BONUS_TASK_IDS, detectTimezone } from './tasks';
 
 // Environment variables detection
 // Vite loads from import.meta.env, we support standard VITE_ and NEXT_ prefixes
@@ -483,7 +483,11 @@ class MockDatabase {
     const hasAllCore = (CORE_TASK_IDS as readonly string[]).every(id =>
       newFormatTasks.some((t: any) => t.task_id === id)
     );
-    if (hasAllCore) return newFormatTasks;
+    const ALL_VALID_MOCK = [...CORE_TASK_IDS, ...BONUS_TASK_IDS] as string[];
+    const hasNoStaleMock = newFormatTasks.every((t: any) => ALL_VALID_MOCK.includes(t.task_id));
+    if (hasAllCore && hasNoStaleMock) return newFormatTasks;
+    // Stale (e.g. 'reading' exists) — purge and recreate
+    this.tasks = this.tasks.filter(t => !(t.user_id === userId && t.day_number === dayNumber));
 
     // Generate tasks (5 core + 2 bonus) with Adhan-synced windows
     const newTasks = getDailyTasks().map(def => ({
@@ -700,10 +704,12 @@ export const db = {
           .maybeSingle();
 
         if (existing) {
-          // Only update email — never overwrite name (user may have customized it)
-          await supabase.from('users').update({
-            email: whopUser.email,
-          }).eq('id', existing.id);
+          // Sync name to Whop display name UNLESS user set a custom display name
+          const hasCustomName = !!localStorage.getItem(`elbezawi_display_name_${existing.id}`);
+          const updatePayload: any = { email: whopUser.email };
+          if (!hasCustomName) updatePayload.name = whopUser.name;
+          await supabase.from('users').update(updatePayload).eq('id', existing.id);
+          if (!hasCustomName) existing.name = whopUser.name;
           mockDb.currentUser = existing;
           mockDb.save();
           return existing;
@@ -845,7 +851,14 @@ export const db = {
         const hasAllCore = (CORE_TASK_IDS as readonly string[]).every(id =>
           withTaskId.some((t: any) => t.task_id === id)
         );
-        if (!error && hasAllCore) return withTaskId;
+        // Reject if stale task IDs exist (e.g. 'reading' from old schema)
+        const ALL_VALID = [...CORE_TASK_IDS, ...BONUS_TASK_IDS] as string[];
+        const hasNoStale = withTaskId.every((t: any) => ALL_VALID.includes(t.task_id));
+        if (!error && hasAllCore && hasNoStale) return withTaskId;
+        // Stale — delete old tasks and recreate below
+        if (withTaskId.length > 0) {
+          await supabase.from('tasks').delete().eq('user_id', userId).eq('day_number', dayNumber);
+        }
 
         const newTasks = getDailyTasks().map((def) => ({
           user_id: userId,
