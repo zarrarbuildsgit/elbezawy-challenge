@@ -1582,6 +1582,16 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
 
       {/* ── Animations ── */}
       <style>{`
+        /* ── Themed scrollbars ── */
+        /* Webkit (Chrome, Edge, Safari) */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0D0D0D; border-radius: 99px; }
+        ::-webkit-scrollbar-thumb { background: #C9A84C40; border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: #C9A84C99; }
+        ::-webkit-scrollbar-corner { background: #0D0D0D; }
+        /* Firefox */
+        * { scrollbar-width: thin; scrollbar-color: #C9A84C40 #0D0D0D; }
+
         @keyframes slideUp {
           from { transform: translateY(100%); opacity: 0; }
           to { transform: translateY(0); opacity: 1; }
