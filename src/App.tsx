@@ -63,7 +63,7 @@ const TASK_NOTE_EN: Record<string, string> = {
   goals: 'Photo of your notebook or progress log',
   quran: 'This is between you and Allah — no proof required',
   qiyam: 'Bonus points — between you and Allah — last third of the night',
-  sunnah: 'Bonus points — pray your daily Sunnah prayers'
+  sunnah: 'Bonus: 2 before Fajr · 4+2 before/after Dhuhr · 2 after Maghrib · 2 after Isha'
 };
 
 function getLocalizedTaskTitle(task: any, lang: 'ar' | 'en') {

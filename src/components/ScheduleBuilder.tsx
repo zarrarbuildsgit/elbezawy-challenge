@@ -216,6 +216,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
   const [showShortcuts, setShowShortcuts] = useState(false)
 
   const dragRef = useRef<{ active: boolean; startMin: number; currentMins: Set<number> }>({ active: false, startMin: -1, currentMins: new Set() })
+  const touchRef = useRef<{ startY: number; startMin: number; didScroll: boolean }>({ startY: 0, startMin: -1, didScroll: false })
   const selectedBlocksRef = useRef<number[]>([])
   const gridRef = useRef<HTMLDivElement>(null)
   const scheduleImageRef = useRef<HTMLDivElement>(null)
@@ -472,15 +473,28 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       return
     }
     const isTouch = e.pointerType === 'touch'
-    dragRef.current = { active: !isTouch, startMin: minute, currentMins: new Set([minute]) }
+    if (isTouch) {
+      // On touch: record position and pending block — DON'T open sheet yet
+      // Wait for pointerUp to confirm it was a tap, not a scroll
+      touchRef.current = { startY: e.clientY, startMin: minute, didScroll: false }
+      setSheetOpen(false)
+      return
+    }
+    dragRef.current = { active: true, startMin: minute, currentMins: new Set([minute]) }
     const newSel = [minute]
     setSelectedBlocks(newSel)
     selectedBlocksRef.current = newSel
     setSheetOpen(false)
-    if (isTouch) setSheetOpen(true)
   }, [getBlockMinuteFromEvent, schedule, showCompletionMode, findMergedBlock])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    // Touch scroll detection: if finger moved > 8px vertically, mark as scroll
+    if (e.pointerType === 'touch') {
+      if (Math.abs(e.clientY - touchRef.current.startY) > 8) {
+        touchRef.current.didScroll = true
+      }
+      return // Don't drag-select on touch
+    }
     if (!dragRef.current.active) return
     const minute = getBlockMinuteFromEvent(e)
     if (minute === null || isFixedBlock(minute)) return
@@ -492,7 +506,18 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     selectedBlocksRef.current = sel
   }, [getBlockMinuteFromEvent, allBlocks])
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    // Touch tap: only open sheet if user didn't scroll
+    if (e.pointerType === 'touch') {
+      if (!touchRef.current.didScroll && touchRef.current.startMin !== -1) {
+        const minute = touchRef.current.startMin
+        setSelectedBlocks([minute])
+        selectedBlocksRef.current = [minute]
+        setSheetOpen(true)
+      }
+      touchRef.current = { startY: 0, startMin: -1, didScroll: false }
+      return
+    }
     if (dragRef.current.active) {
       dragRef.current.active = false
       const cur = selectedBlocksRef.current

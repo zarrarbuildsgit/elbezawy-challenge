@@ -253,7 +253,7 @@ export function getDailyTasks() {
       window_start: '00:00',
       window_end: '23:59',
       requires_photo: false,
-      note_ar: 'نقاط إضافية — حافظ على سننك اليومية',
+      note_ar: 'نقاط إضافية — ٢ قبل الفجر · ٤+٢ قبل/بعد الظهر · ٢ بعد المغرب · ٢ بعد العشاء',
       is_bonus: true
     },
   ];
