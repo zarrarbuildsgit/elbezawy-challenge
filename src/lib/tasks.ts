@@ -3,7 +3,7 @@
  * Prayers synced to real adhan times via api.aladhan.com (cached daily in localStorage)
  */
 
-export const CORE_TASK_IDS  = ['fajr', 'adhkar', 'exercise', 'goals', 'quran'] as const;
+export const CORE_TASK_IDS  = ['fajr', 'adhkar', 'dhuhr', 'asr', 'exercise', 'maghrib', 'goals', 'isha', 'quran'] as const;
 export const BONUS_TASK_IDS = ['qiyam', 'sunnah'] as const;
 export type CoreTaskId  = typeof CORE_TASK_IDS[number];
 export type BonusTaskId = typeof BONUS_TASK_IDS[number];
@@ -166,6 +166,26 @@ export function getDailyTasks() {
       is_bonus: false
     },
     {
+      id: 'dhuhr',
+      title_ar: 'صلاة الظهر',
+      type: 'spiritual',
+      window_start: t.Dhuhr,
+      window_end: addMinutes(t.Dhuhr, 60),
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
+      id: 'asr',
+      title_ar: 'صلاة العصر',
+      type: 'spiritual',
+      window_start: t.Asr,
+      window_end: t.Maghrib,
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
       id: 'exercise',
       title_ar: 'تمرين ٣٠ دقيقة',
       type: 'physical',
@@ -176,6 +196,16 @@ export function getDailyTasks() {
       is_bonus: false
     },
     {
+      id: 'maghrib',
+      title_ar: 'صلاة المغرب',
+      type: 'spiritual',
+      window_start: t.Maghrib,
+      window_end: addMinutes(t.Maghrib, 30),
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
       id: 'goals',
       title_ar: 'مراجعة الأهداف',
       type: 'mental',
@@ -183,6 +213,16 @@ export function getDailyTasks() {
       window_end: t.Maghrib,
       requires_photo: true,
       note_ar: 'صورة لمفكرتك أو تسجيلك',
+      is_bonus: false
+    },
+    {
+      id: 'isha',
+      title_ar: 'صلاة العشاء',
+      type: 'spiritual',
+      window_start: t.Isha,
+      window_end: addMinutes(t.Isha, 30),
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
       is_bonus: false
     },
     {

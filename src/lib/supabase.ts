@@ -540,7 +540,7 @@ class MockDatabase {
   checkAndUpdateStreak(userId: string, dayNumber: number) {
     const userTasks = this.tasks.filter(t => t.user_id === userId && t.day_number === dayNumber);
     const coreTasks = userTasks.filter(t => (CORE_TASK_IDS as readonly string[]).includes(t.task_id));
-    const allCompleted = coreTasks.length === 5 && coreTasks.every(t => t.completed);
+    const allCompleted = coreTasks.length === 9 && coreTasks.every(t => t.completed);
 
     if (allCompleted) {
       const streakIndex = this.streaks.findIndex(s => s.user_id === userId);
@@ -1020,7 +1020,7 @@ export const db = {
           const coreDayTasks = allDayTasks?.filter((t: any) =>
               (CORE_TASK_IDS as readonly string[]).includes(t.task_id)
             ) || [];
-          if (coreDayTasks.length === 5 && coreDayTasks.every((t: any) => t.completed)) {
+          if (coreDayTasks.length === 9 && coreDayTasks.every((t: any) => t.completed)) {
             const { data: curStreak } = await supabase
               .from('streaks')
               .select('*')

@@ -42,6 +42,10 @@ const TASK_TITLE_EN: Record<string, string> = {
   fajr: 'Fajr Prayer',
   adhkar: 'Morning Adhkar',
   exercise: '30-min Workout',
+  dhuhr: 'Dhuhr Prayer',
+  asr: 'Asr Prayer',
+  maghrib: 'Maghrib Prayer',
+  isha: 'Isha Prayer',
   goals: 'Review Goals',
   quran: 'Read Quran',
   qiyam: 'Qiyam al-Layl ⭐',
@@ -52,6 +56,10 @@ const TASK_NOTE_EN: Record<string, string> = {
   fajr: 'This is between you and Allah — no proof required',
   adhkar: 'This is between you and Allah — no proof required',
   exercise: 'Upload a photo as proof of completion',
+  dhuhr: 'This is between you and Allah — no proof required',
+  asr: 'This is between you and Allah — no proof required',
+  maghrib: 'This is between you and Allah — no proof required',
+  isha: 'This is between you and Allah — no proof required',
   goals: 'Photo of your notebook or progress log',
   quran: 'This is between you and Allah — no proof required',
   qiyam: 'Bonus points — between you and Allah — last third of the night',
@@ -866,10 +874,10 @@ export default function App() {
               <div className="flex-1 bg-[#222] h-1.5 rounded-full overflow-hidden">
                 <div 
                   className="bg-[#C9A84C] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(completedCount / 5) * 100}%` }}
+                  style={{ width: `${(completedCount / 9) * 100}%` }}
                 />
               </div>
-              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(5)}{bonusCompletedCount > 0 ? <span style={{color:'#C9A84C99', fontSize:'10px'}}> +{bonusCompletedCount}⭐</span> : null}</span>
+              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(9)}{bonusCompletedCount > 0 ? <span style={{color:'#C9A84C99', fontSize:'10px'}}> +{bonusCompletedCount}⭐</span> : null}</span>
             </div>
 
             {/* Timeline */}
@@ -1042,9 +1050,9 @@ export default function App() {
 
             <div className="bg-[#121212]/50 border border-white/5 rounded-2xl p-4 text-center">
               <p className="text-[11px] text-gray-500">
-                {completedCount === 5 
-                  ? (lang === 'ar' ? `🎉 مبارك! أكملت جميع المهام الأساسية اليوم${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} نقاط إضافية ⭐` : ''}. سلسلتك محفوظة!` : `🎉 All 5 core tasks done today${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} bonus ⭐` : ''}! Streak saved.`) 
-                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٥ مهام اليوم. ${n(5 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 5 tasks today. ${n(5 - completedCount)} remaining.`)}
+                {completedCount === 9 
+                  ? (lang === 'ar' ? `🎉 مبارك! أكملت جميع المهام الأساسية التسع اليوم${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} نقاط إضافية ⭐` : ''}. سلسلتك محفوظة!` : `🎉 All 9 core tasks done today${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} bonus ⭐` : ''}! Streak saved.`) 
+                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٩ مهام اليوم. ${n(9 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 9 tasks today. ${n(9 - completedCount)} remaining.`)}
               </p>
             </div>
 
