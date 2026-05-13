@@ -11,7 +11,10 @@ import {
   formatTimeEastern,
   getTaskState,
   getMinutesUntilWindowEnd,
-  buildTimelineItems
+  buildTimelineItems,
+  fetchAndCacheAdhan,
+  CORE_TASK_IDS,
+  BONUS_TASK_IDS
 } from './lib/tasks';
 import ChatWidget from './components/ChatWidget';
 import ScheduleBuilder from './components/ScheduleBuilder';
@@ -27,12 +30,6 @@ const PRESET_PROOFS = [
     icon: Dumbbell
   },
   {
-    name: 'قراءة ١٠ صفحات',
-    name_en: 'Read 10 pages',
-    url: 'https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?q=80&w=600&auto=format&fit=crop',
-    icon: BookOpen
-  },
-  {
     name: 'مراجعة الأهداف',
     name_en: 'Review goals',
     url: 'https://images.unsplash.com/photo-1484480974693-6ca0a78fb36b?q=80&w=600&auto=format&fit=crop',
@@ -44,18 +41,20 @@ const TASK_TITLE_EN: Record<string, string> = {
   fajr: 'Fajr Prayer',
   adhkar: 'Morning Adhkar',
   exercise: '30-min Workout',
-  reading: 'Read 10 Pages',
   goals: 'Review Goals',
-  quran: 'Read Quran'
+  quran: 'Read Quran',
+  qiyam: 'Qiyam al-Layl ⭐',
+  sunnah: 'Sunnah Prayers ⭐'
 };
 
 const TASK_NOTE_EN: Record<string, string> = {
   fajr: 'This is between you and Allah — no proof required',
   adhkar: 'This is between you and Allah — no proof required',
   exercise: 'Upload a photo as proof of completion',
-  reading: 'Upload a photo of the book or page',
   goals: 'Photo of your notebook or progress log',
-  quran: 'This is between you and Allah — no proof required'
+  quran: 'This is between you and Allah — no proof required',
+  qiyam: 'Bonus points — between you and Allah — last third of the night',
+  sunnah: 'Bonus points — pray your daily Sunnah prayers'
 };
 
 function getLocalizedTaskTitle(task: any, lang: 'ar' | 'en') {
@@ -87,6 +86,7 @@ export default function App() {
   // Clear stale placeholder data on first load
   useEffect(() => { clearPlaceholderData(); }, []);
   const [settingsTimezone, setSettingsTimezone] = useState(detectTimezone());
+  const [settingsDisplayName, setSettingsDisplayName] = useState('');
   const [route, setRoute] = useState<string>(window.location.hash || '#/');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [todayTasks, setTodayTasks] = useState<any[]>([]);
@@ -135,6 +135,35 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // On mount: grab user data from URL param set by callback.ts, store in localStorage, clean URL
+  useEffect(() => {
+    const hash = window.location.hash; // e.g. "#/?_u=base64..."
+    const paramMatch = hash.match(/[?&]_u=([^&]+)/);
+    if (paramMatch) {
+      try {
+        const userData = JSON.parse(atob(decodeURIComponent(paramMatch[1])));
+        localStorage.setItem('elbezawi_whop_user', JSON.stringify(userData));
+      } catch (e) {
+        console.error('Failed to parse auth param:', e);
+      }
+      // Clean URL — remove _u param to avoid re-processing on refresh
+      window.location.replace('/#/');
+    }
+  }, []);
+
+  // Fetch Adhan times on mount — caches daily in localStorage, triggers task refresh
+  useEffect(() => {
+    fetchAndCacheAdhan().then((timings) => {
+      // If we got fresh timings (not cached), bump refreshTrigger so new tasks use real times
+      const today = new Date().toLocaleDateString('sv');
+      const wasAlreadyCached = !!localStorage.getItem(`elbezawi_adhan_${today}_prev`);
+      if (!wasAlreadyCached) {
+        localStorage.setItem(`elbezawi_adhan_${today}_prev`, '1');
+        setRefreshTrigger(p => p + 1);
+      }
+    }).catch(() => { /* silent — defaults apply */ });
+  }, []);
+
   // Fetch current user details
   useEffect(() => {
     async function loadUser() {
@@ -153,6 +182,7 @@ export default function App() {
         if (user) {
           const tasks = await db.getOrCreateTodayTasks(user.id, user.timezone);
           setTodayTasks(tasks);
+          setSettingsDisplayName(db.getDisplayName(user.id, user.name || user.email || ''));
         }
       } else {
         setCurrentUser(null);
@@ -409,8 +439,11 @@ export default function App() {
   });
 
   const scheduleTasks = todayTasks.filter(t => t.task_id);
+  const coreTasks = scheduleTasks.filter(t => (CORE_TASK_IDS as readonly string[]).includes(t.task_id));
+  const bonusTasks = scheduleTasks.filter(t => (BONUS_TASK_IDS as readonly string[]).includes(t.task_id));
   const timelineItems = buildTimelineItems(scheduleTasks, currentTime);
-  const completedCount = scheduleTasks.filter(t => t.completed).length;
+  const completedCount = coreTasks.filter(t => t.completed).length;
+  const bonusCompletedCount = bonusTasks.filter(t => t.completed).length;
 
   return (
     <div className="min-h-screen bg-[#0D0D0D] text-[#E0E0E0] flex flex-col selection:bg-[#C9A84C] selection:text-[#0D0D0D] transition-all duration-500 ease-in-out" dir={lang === 'ar' ? 'rtl' : 'ltr'}>
@@ -502,7 +535,7 @@ export default function App() {
                   <User className="w-4 h-4" />
                 </div>
                 <div>
-                  <h4 className="text-xs font-bold text-white">{currentUser.name}</h4>
+                  <h4 className="text-xs font-bold text-white">{settingsDisplayName || currentUser.name}</h4>
                   <p className="text-[9px] text-gray-500">{currentUser.email}</p>
                 </div>
               </div>
@@ -538,6 +571,33 @@ export default function App() {
               <h3 className="font-bold text-white text-base">{t('settings.title')}</h3>
               <button onClick={() => setShowSettings(false)} className="text-gray-500 hover:text-white transition-all duration-500 text-sm">
                 ✕
+              </button>
+            </div>
+
+            {/* Display Name Row */}
+            <div className="flex flex-col gap-2 bg-[#181818] p-4 rounded-2xl border border-white/5 text-start">
+              <span className="text-sm font-bold text-gray-300">{lang === 'ar' ? 'الاسم المعروض' : 'Display Name'}</span>
+              <input
+                type="text"
+                value={settingsDisplayName}
+                onChange={e => setSettingsDisplayName(e.target.value)}
+                maxLength={40}
+                placeholder={currentUser?.name || ''}
+                className="w-full bg-[#121212] border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-[#C9A84C] text-xs"
+              />
+              <p className="text-[10px]" style={{ color: '#C9A84C99' }}>
+                {lang === 'ar' ? 'هذا ما سيراه الجميع في لوحة المتصدرين' : 'This is what everyone sees on the leaderboard'}
+              </p>
+              <button
+                onClick={async () => {
+                  if (!settingsDisplayName.trim()) return;
+                  await db.updateDisplayName(currentUser.id, settingsDisplayName.trim());
+                  setSettingsDisplayName(settingsDisplayName.trim());
+                  alert(lang === 'ar' ? 'تم حفظ الاسم بنجاح!' : 'Display name saved!');
+                }}
+                className="mt-1 w-full bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] font-bold py-2 rounded-xl text-xs transition"
+              >
+                {lang === 'ar' ? 'حفظ الاسم' : 'Save name'}
               </button>
             </div>
 
@@ -804,10 +864,10 @@ export default function App() {
               <div className="flex-1 bg-[#222] h-1.5 rounded-full overflow-hidden">
                 <div 
                   className="bg-[#C9A84C] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(completedCount / 6) * 100}%` }}
+                  style={{ width: `${(completedCount / 5) * 100}%` }}
                 />
               </div>
-              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(6)}</span>
+              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(5)}{bonusCompletedCount > 0 ? <span style={{color:'#C9A84C99', fontSize:'10px'}}> +{bonusCompletedCount}⭐</span> : null}</span>
             </div>
 
             {/* Timeline */}
@@ -826,6 +886,7 @@ export default function App() {
                 }
 
                 const task = item.task;
+                const isBonus = (BONUS_TASK_IDS as readonly string[]).includes(task.task_id);
                 const state = getTaskState(task, currentTime);
                 const isActive = state === 'active';
                 const isDone = state === 'done';
@@ -901,6 +962,11 @@ export default function App() {
                         {/* Task Title & Details */}
                         <div className="min-w-0">
                           <div className="flex items-center gap-1.5 mb-0.5">
+                            {isBonus && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(201,168,76,0.15)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)' }}>
+                                ⭐ {lang === 'ar' ? 'إضافي' : 'BONUS'}
+                              </span>
+                            )}
                             <TaskTypeIcon type={task.type} />
                             <span className={`text-[13px] font-bold text-white truncate ${
                               isDone && task.type === 'spiritual' ? 'line-through decoration-[#C9A84C] opacity-75' : ''
@@ -974,9 +1040,9 @@ export default function App() {
 
             <div className="bg-[#121212]/50 border border-white/5 rounded-2xl p-4 text-center">
               <p className="text-[11px] text-gray-500">
-                {completedCount === 6 
-                  ? (lang === 'ar' ? '🎉 مبارك! أكملت جميع مهام اليوم الستة. سلسلتك محفوظة!' : '🎉 Congratulations! You have completed all 6 tasks today.') 
-                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٦ مهام اليوم. ${n(6 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 6 tasks today. ${n(6 - completedCount)} remaining.`)}
+                {completedCount === 5 
+                  ? (lang === 'ar' ? `🎉 مبارك! أكملت جميع المهام الأساسية اليوم${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} نقاط إضافية ⭐` : ''}. سلسلتك محفوظة!` : `🎉 All 5 core tasks done today${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} bonus ⭐` : ''}! Streak saved.`) 
+                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٥ مهام اليوم. ${n(5 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 5 tasks today. ${n(5 - completedCount)} remaining.`)}
               </p>
             </div>
 

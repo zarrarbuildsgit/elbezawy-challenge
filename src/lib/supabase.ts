@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { DAILY_TASKS, detectTimezone } from './tasks';
+import { getDailyTasks, CORE_TASK_IDS, detectTimezone } from './tasks';
 
 // Environment variables detection
 // Vite loads from import.meta.env, we support standard VITE_ and NEXT_ prefixes
@@ -480,12 +480,13 @@ class MockDatabase {
     const todayTasks = userTasks.filter(t => t.day_number === dayNumber);
     const newFormatTasks = todayTasks.filter(t => t.task_id);
 
-    if (newFormatTasks.length === 6) {
-      return newFormatTasks;
-    }
+    const hasAllCore = (CORE_TASK_IDS as readonly string[]).every(id =>
+      newFormatTasks.some((t: any) => t.task_id === id)
+    );
+    if (hasAllCore) return newFormatTasks;
 
-    // Generate 6 new tasks with window-based structure
-    const newTasks = DAILY_TASKS.map(def => ({
+    // Generate tasks (5 core + 2 bonus) with Adhan-synced windows
+    const newTasks = getDailyTasks().map(def => ({
       id: `task_${userId}_d${dayNumber}_${def.id}_${Math.random().toString(36).substr(2, 5)}`,
       user_id: userId,
       day_number: dayNumber,
@@ -534,8 +535,8 @@ class MockDatabase {
 
   checkAndUpdateStreak(userId: string, dayNumber: number) {
     const userTasks = this.tasks.filter(t => t.user_id === userId && t.day_number === dayNumber);
-    // All 6 tasks must be completed to increment streak
-    const allCompleted = userTasks.length === 6 && userTasks.every(t => t.completed);
+    const coreTasks = userTasks.filter(t => (CORE_TASK_IDS as readonly string[]).includes(t.task_id));
+    const allCompleted = coreTasks.length === 5 && coreTasks.every(t => t.completed);
 
     if (allCompleted) {
       const streakIndex = this.streaks.findIndex(s => s.user_id === userId);
@@ -547,7 +548,7 @@ class MockDatabase {
           streak.current_streak += 1;
           streak.longest_streak = Math.max(streak.longest_streak, streak.current_streak);
           streak.last_completed_date = todayStr;
-          streak.total_completed += 6;
+          streak.total_completed += userTasks.filter(t => t.completed).length;
           this.streaks[streakIndex] = streak;
         }
       }
@@ -699,8 +700,8 @@ export const db = {
           .maybeSingle();
 
         if (existing) {
+          // Only update email — never overwrite name (user may have customized it)
           await supabase.from('users').update({
-            name: whopUser.name,
             email: whopUser.email,
           }).eq('id', existing.id);
           mockDb.currentUser = existing;
@@ -840,12 +841,13 @@ export const db = {
           .eq('user_id', userId)
           .eq('day_number', dayNumber);
 
-        const newFormatCount = existing?.filter((t: any) => t.task_id).length || 0;
-        if (!error && existing && newFormatCount === 6) {
-          return existing.filter((t: any) => t.task_id);
-        }
+        const withTaskId = existing?.filter((t: any) => t.task_id) || [];
+        const hasAllCore = (CORE_TASK_IDS as readonly string[]).every(id =>
+          withTaskId.some((t: any) => t.task_id === id)
+        );
+        if (!error && hasAllCore) return withTaskId;
 
-        const newTasks = DAILY_TASKS.map((def) => ({
+        const newTasks = getDailyTasks().map((def) => ({
           user_id: userId,
           day_number: dayNumber,
           task_id: def.id,
@@ -1002,7 +1004,10 @@ export const db = {
             .eq('user_id', userId)
             .eq('day_number', dayNumber);
 
-          if (allDayTasks && allDayTasks.length === 6 && allDayTasks.every((t: any) => t.completed)) {
+          const coreDayTasks = allDayTasks?.filter((t: any) =>
+              (CORE_TASK_IDS as readonly string[]).includes(t.task_id)
+            ) || [];
+          if (coreDayTasks.length === 5 && coreDayTasks.every((t: any) => t.completed)) {
             const { data: curStreak } = await supabase
               .from('streaks')
               .select('*')
@@ -1020,7 +1025,7 @@ export const db = {
                     current_streak: updatedStreak,
                     longest_streak: updatedLongest,
                     last_completed_date: todayStr,
-                    total_completed: curStreak.total_completed + 6
+                    total_completed: curStreak.total_completed + (allDayTasks?.filter((t: any) => t.completed).length || 5)
                   })
                   .eq('user_id', userId);
               }
@@ -1034,6 +1039,33 @@ export const db = {
     }
 
     return mockDb.completeTask(taskId, photoUrl);
+  },
+
+  updateDisplayName: async (userId: string, displayName: string) => {
+    // Store in localStorage always (guaranteed to work)
+    localStorage.setItem(`elbezawi_display_name_${userId}`, displayName);
+    // Also try to update Supabase name field
+    if (supabase) {
+      try {
+        await supabase.from('users').update({ name: displayName }).eq('id', userId);
+        // Update mockDb cache too
+        const u = mockDb.users.find((u: any) => u.id === userId);
+        if (u) { u.name = displayName; mockDb.save(); }
+      } catch (e) {
+        console.warn('Could not update display name in Supabase:', e);
+      }
+    } else {
+      const u = mockDb.users.find((u: any) => u.id === userId);
+      if (u) { u.name = displayName; mockDb.save(); }
+    }
+  },
+
+  getDisplayName: (userId: string, fallback: string): string => {
+    try {
+      return localStorage.getItem(`elbezawi_display_name_${userId}`) || fallback;
+    } catch {
+      return fallback;
+    }
   },
 
   getLeaderboard: async () => {

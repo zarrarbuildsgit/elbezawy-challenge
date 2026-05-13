@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { getAdhanTimings, DEFAULT_ADHAN_TIMINGS } from '../lib/tasks'
 
 // ─── Types ───────────────────────────────────────────────────────────
 interface ScheduleBuilderProps {
@@ -21,10 +22,13 @@ type CategoryKey =
 type FixedBlockKey =
   | 'fajr'
   | 'adhkar'
+  | 'exercise'
   | 'dhuhr'
+  | 'goals'
   | 'asr'
   | 'maghrib'
   | 'isha'
+  | 'qiyam'
   | 'quran'
 
 type BlockValue = FixedBlockKey | CategoryKey | null
@@ -79,17 +83,31 @@ const CATEGORIES: Record<CategoryKey, {
   custom:       { emoji: '➕', labelEn: 'Custom',          labelAr: 'مخصص',           color: '#A0A0A0', bg: 'rgba(160,160,160,0.12)', bgStrong: 'rgba(160,160,160,0.25)' },
 }
 
-const FIXED_BLOCKS: Record<FixedBlockKey, {
-  startMin: number; endMin: number; labelEn: string; labelAr: string; emoji: string
-}> = {
-  fajr:    { startMin: 300,  endMin: 360,  labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-  adhkar:  { startMin: 360,  endMin: 420,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
-  dhuhr:   { startMin: 780,  endMin: 810,  labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
-  asr:     { startMin: 960,  endMin: 990,  labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
-  maghrib: { startMin: 1110, endMin: 1140, labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
-  isha:    { startMin: 1200, endMin: 1230, labelEn: 'Isha Prayer',    labelAr: 'صلاة العشاء',    emoji: '🕌' },
-  quran:   { startMin: 1230, endMin: 1290, labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
+/** Convert "HH:MM" to minutes-since-midnight */
+function toMin(t: string): number {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
 }
+
+/** Build FIXED_BLOCKS from live Adhan timings cache */
+function buildFixedBlocks(): Record<FixedBlockKey, { startMin: number; endMin: number; labelEn: string; labelAr: string; emoji: string }> {
+  const t = getAdhanTimings();
+  const adhkarEnd = toMin(t.Sunrise) + 30; // 30 min after sunrise
+  return {
+    fajr:     { startMin: toMin(t.Fajr),    endMin: toMin(t.Sunrise), labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
+    adhkar:   { startMin: toMin(t.Fajr),    endMin: adhkarEnd,         labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+    exercise: { startMin: 0,                endMin: 23 * 60 + 59,      labelEn: '30-min Workout', labelAr: 'تمرين ٣٠ دقيقة', emoji: '🏋️' },
+    dhuhr:    { startMin: toMin(t.Dhuhr),   endMin: toMin(t.Dhuhr) + 30, labelEn: 'Dhuhr Prayer', labelAr: 'صلاة الظهر',    emoji: '🕌' },
+    asr:      { startMin: toMin(t.Asr),     endMin: toMin(t.Maghrib),  labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
+    goals:    { startMin: toMin(t.Asr),     endMin: toMin(t.Maghrib),  labelEn: 'Goals Review',   labelAr: 'مراجعة الأهداف', emoji: '🎯' },
+    maghrib:  { startMin: toMin(t.Maghrib), endMin: toMin(t.Maghrib) + 30, labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب', emoji: '🕌' },
+    isha:     { startMin: toMin(t.Isha),    endMin: toMin(t.Isha) + 30, labelEn: 'Isha Prayer',   labelAr: 'صلاة العشاء',    emoji: '🕌' },
+    qiyam:    { startMin: toMin(t.Lastthird), endMin: toMin(t.Fajr),  labelEn: 'Qiyam al-Layl ⭐', labelAr: 'قيام الليل ⭐', emoji: '🌙' },
+    quran:    { startMin: toMin(t.Isha),    endMin: 23 * 60 + 59,      labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
+  };
+}
+
+const FIXED_BLOCKS = buildFixedBlocks();
 
 const GOLD = '#C9A84C'
 const GOLD_BG = 'rgba(201,168,76,0.06)'
@@ -1128,7 +1146,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
               <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${GOLD_BG}, rgba(201,168,76,0.15))`, border: `1px solid ${GOLD_BORDER}` }}>
                 <span className="text-[8px]">🕌</span>
               </div>
-              <span className="text-[10px]" style={{ color: GOLD }}>{isRtl ? 'فترات الصلاة والأذكار (ثابتة)' : 'Prayer & Adhkar (Fixed)'}</span>
+              <span className="text-[10px]" style={{ color: GOLD }}>{isRtl ? 'فترات الصلاة والمهام (ثابتة ومتزامنة مع التحدي)' : 'Prayers & Challenge Tasks (Fixed, synced with challenge)'}</span>
             </div>
             {/* Category legends */}
             {categoryKeys.filter(k => k !== 'custom').map(key => {

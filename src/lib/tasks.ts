@@ -1,63 +1,197 @@
 /**
- * ElBezawy Challenge v3 — Task Generation and Time Calculations
+ * ElBezawy Challenge — Task Definitions + Adhan API Service
+ * Prayers synced to real adhan times via api.aladhan.com (cached daily in localStorage)
  */
 
-export const DAILY_TASKS = [
-  {
-    id: 'fajr',
-    title_ar: 'صلاة الفجر',
-    type: 'spiritual',
-    window_start: '05:00',
-    window_end: '07:00',
-    requires_photo: false,
-    note_ar: 'بينك وبين الله — لا إثبات مطلوب'
-  },
-  {
-    id: 'adhkar',
-    title_ar: 'أذكار الصباح',
-    type: 'spiritual',
-    window_start: '06:00',
-    window_end: '09:00',
-    requires_photo: false,
-    note_ar: 'بينك وبين الله — لا إثبات مطلوب'
-  },
-  {
-    id: 'exercise',
-    title_ar: 'تمرين ٣٠ دقيقة',
-    type: 'physical',
-    window_start: '07:00',
-    window_end: '12:00',
-    requires_photo: true,
-    note_ar: 'أرسل صورة كدليل على الإنجاز'
-  },
-  {
-    id: 'reading',
-    title_ar: 'قراءة ١٠ صفحات',
-    type: 'mental',
-    window_start: '10:00',
-    window_end: '14:00',
-    requires_photo: true,
-    note_ar: 'أرسل صورة للكتاب أو الصفحة'
-  },
-  {
-    id: 'goals',
-    title_ar: 'مراجعة الأهداف',
-    type: 'mental',
-    window_start: '16:00',
-    window_end: '20:00',
-    requires_photo: true,
-    note_ar: 'صورة لمفكرتك أو تسجيلك'
-  },
-  {
-    id: 'quran',
-    title_ar: 'قراءة القرآن',
-    type: 'spiritual',
-    window_start: '20:00',
-    window_end: '23:59',
-    requires_photo: false,
-    note_ar: 'بينك وبين الله — لا إثبات مطلوب'
+export const CORE_TASK_IDS  = ['fajr', 'adhkar', 'exercise', 'goals', 'quran'] as const;
+export const BONUS_TASK_IDS = ['qiyam', 'sunnah'] as const;
+export type CoreTaskId  = typeof CORE_TASK_IDS[number];
+export type BonusTaskId = typeof BONUS_TASK_IDS[number];
+
+export interface AdhanTimings {
+  Fajr: string; Sunrise: string; Dhuhr: string;
+  Asr: string; Maghrib: string; Isha: string; Lastthird: string;
+}
+
+// Fallback times (Arabian Peninsula approximation)
+export const DEFAULT_ADHAN_TIMINGS: AdhanTimings = {
+  Fajr: '05:00', Sunrise: '06:15', Dhuhr: '12:00',
+  Asr: '15:30', Maghrib: '18:15', Isha: '19:45', Lastthird: '02:30'
+};
+
+// Timezone → approximate coordinates for Adhan API fallback
+const TZ_COORDS: Record<string, [number, number]> = {
+  'Asia/Riyadh':    [24.68, 46.72],
+  'Asia/Jeddah':    [21.54, 39.19],
+  'Africa/Cairo':   [30.06, 31.24],
+  'Asia/Dubai':     [25.20, 55.27],
+  'Africa/Casablanca': [33.59, -7.62],
+  'Asia/Kuwait':    [29.37, 47.98],
+  'Asia/Qatar':     [25.28, 51.52],
+  'Asia/Bahrain':   [26.22, 50.58],
+  'Asia/Muscat':    [23.61, 58.59],
+  'Africa/Tunis':   [36.82, 10.17],
+  'Africa/Tripoli': [32.90, 13.18],
+  'Asia/Amman':     [31.96, 35.95],
+  'Asia/Beirut':    [33.89, 35.50],
+  'Asia/Damascus':  [33.51, 36.29],
+  'Asia/Baghdad':   [33.34, 44.40],
+  'Europe/London':  [51.51, -0.13],
+  'Europe/Paris':   [48.86,  2.35],
+  'Europe/Berlin':  [52.52, 13.41],
+};
+
+/** Read today's adhan timings from localStorage cache */
+export function getAdhanTimings(): AdhanTimings {
+  if (typeof window === 'undefined') return DEFAULT_ADHAN_TIMINGS;
+  const today = new Date().toLocaleDateString('sv');
+  try {
+    const raw = localStorage.getItem(`elbezawi_adhan_${today}`);
+    if (raw) return { ...DEFAULT_ADHAN_TIMINGS, ...JSON.parse(raw) };
+  } catch { /* silent */ }
+  return DEFAULT_ADHAN_TIMINGS;
+}
+
+/** Fetch today's adhan timings from api.aladhan.com and cache in localStorage */
+export async function fetchAndCacheAdhan(): Promise<AdhanTimings> {
+  if (typeof window === 'undefined') return DEFAULT_ADHAN_TIMINGS;
+  const today = new Date().toLocaleDateString('sv');
+  const cacheKey = `elbezawi_adhan_${today}`;
+
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    try { return { ...DEFAULT_ADHAN_TIMINGS, ...JSON.parse(cached) }; } catch { /* fall through */ }
   }
-];
+
+  // Resolve coordinates: geolocation → timezone fallback → Mecca
+  let lat = 21.39, lng = 39.86;
+  try {
+    const pos = await new Promise<GeolocationPosition>((res, rej) =>
+      navigator.geolocation.getCurrentPosition(res, rej, { timeout: 5000 })
+    );
+    lat = pos.coords.latitude;
+    lng = pos.coords.longitude;
+  } catch {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const coords = TZ_COORDS[tz];
+    if (coords) { lat = coords[0]; lng = coords[1]; }
+  }
+
+  try {
+    const res = await fetch(
+      `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lng}&method=4`
+    );
+    if (res.ok) {
+      const json = await res.json();
+      const raw = json?.data?.timings as Record<string, string> | undefined;
+      if (raw) {
+        const keys: (keyof AdhanTimings)[] = ['Fajr','Sunrise','Dhuhr','Asr','Maghrib','Isha','Lastthird'];
+        const clean: Partial<AdhanTimings> = {};
+        for (const k of keys) {
+          if (raw[k]) clean[k] = raw[k].replace(/\s*\(.*\)/, '').trim(); // strip " (+01)" suffix
+        }
+        const timings = { ...DEFAULT_ADHAN_TIMINGS, ...clean };
+        localStorage.setItem(cacheKey, JSON.stringify(timings));
+        return timings;
+      }
+    }
+  } catch (e) {
+    console.warn('Adhan API fetch failed, using defaults:', e);
+  }
+
+  return DEFAULT_ADHAN_TIMINGS;
+}
+
+/** Add N minutes to an "HH:MM" string, clamped to 23:59 */
+function addMinutes(time: string, n: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = Math.min(h * 60 + m + n, 23 * 60 + 59);
+  return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+}
+
+/** Build the full task list using latest cached Adhan timings */
+export function getDailyTasks() {
+  const t = getAdhanTimings();
+  const adhkarEnd = addMinutes(t.Sunrise, 30); // 30 min after sunrise (islamically correct)
+
+  return [
+    // ── CORE (5) — all required for streak ───────────────────────────────────
+    {
+      id: 'fajr',
+      title_ar: 'صلاة الفجر',
+      type: 'spiritual',
+      window_start: t.Fajr,
+      window_end: t.Sunrise,
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
+      id: 'adhkar',
+      title_ar: 'أذكار الصباح',
+      type: 'spiritual',
+      window_start: t.Fajr,
+      window_end: adhkarEnd,
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
+      id: 'exercise',
+      title_ar: 'تمرين ٣٠ دقيقة',
+      type: 'physical',
+      window_start: '00:00',
+      window_end: '23:59',
+      requires_photo: true,
+      note_ar: 'أرسل صورة كدليل على الإنجاز',
+      is_bonus: false
+    },
+    {
+      id: 'goals',
+      title_ar: 'مراجعة الأهداف',
+      type: 'mental',
+      window_start: t.Asr,
+      window_end: t.Maghrib,
+      requires_photo: true,
+      note_ar: 'صورة لمفكرتك أو تسجيلك',
+      is_bonus: false
+    },
+    {
+      id: 'quran',
+      title_ar: 'قراءة القرآن',
+      type: 'spiritual',
+      window_start: t.Isha,
+      window_end: '23:59',
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    // ── BONUS (2) — optional, add to total_completed & leaderboard ────────────
+    {
+      id: 'qiyam',
+      title_ar: 'قيام الليل',
+      type: 'spiritual',
+      window_start: t.Lastthird,
+      window_end: t.Fajr,
+      requires_photo: false,
+      note_ar: 'نقاط إضافية — بينك وبين الله',
+      is_bonus: true
+    },
+    {
+      id: 'sunnah',
+      title_ar: 'السنن الرواتب',
+      type: 'spiritual',
+      window_start: '00:00',
+      window_end: '23:59',
+      requires_photo: false,
+      note_ar: 'نقاط إضافية — حافظ على سننك اليومية',
+      is_bonus: true
+    },
+  ];
+}
+
+// Static export for backward compat — call getDailyTasks() inside async fns for live times
+export const DAILY_TASKS = getDailyTasks();
 
 /** Convert Western numerals to Eastern Arabic numerals (٠١٢٣) */
 export function toEasternArabic(num: number | string): string {
@@ -73,55 +207,31 @@ export function formatTimeEastern(timeStr: string): string {
   return toEasternArabic(timeStr);
 }
 
-/**
- * Detect the user's timezone using the browser Intl API
- */
+/** Detect the user's timezone using the browser Intl API */
 export const detectTimezone = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Riyadh';
-  } catch (e) {
+  } catch {
     return 'Asia/Riyadh';
   }
 };
 
-/**
- * Calculates remaining time in hours, minutes, and seconds from now until the target UTC ISO deadline
- */
 export const calculateTimeRemaining = (deadlineUtc: string): {
-  hours: number;
-  minutes: number;
-  seconds: number;
-  isExpired: boolean;
-  formatted: string;
+  hours: number; minutes: number; seconds: number; isExpired: boolean; formatted: string;
 } => {
   const now = new Date().getTime();
   const deadline = new Date(deadlineUtc).getTime();
   const diff = deadline - now;
 
-  if (diff <= 0) {
-    return {
-      hours: 0,
-      minutes: 0,
-      seconds: 0,
-      isExpired: true,
-      formatted: 'انتهت المهلة'
-    };
-  }
+  if (diff <= 0) return { hours: 0, minutes: 0, seconds: 0, isExpired: true, formatted: 'انتهت المهلة' };
 
-  const hours = Math.floor(diff / (1000 * 60 * 60));
+  const hours   = Math.floor(diff / (1000 * 60 * 60));
   const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
   const seconds = Math.floor((diff % (1000 * 60)) / 1000);
 
-  return {
-    hours,
-    minutes,
-    seconds,
-    isExpired: false,
-    formatted: `${hours} ساعة و ${minutes} دقيقة`
-  };
+  return { hours, minutes, seconds, isExpired: false, formatted: `${hours} ساعة و ${minutes} دقيقة` };
 };
 
-/** Get today's Date objects for a task's window_start and window_end in the user's timezone */
 export function getTaskWindowDates(window_start: string, window_end: string, timezone: string): { start: Date; end: Date } {
   const now = new Date();
   const dateBase = now.toLocaleDateString('en-US', { timeZone: timezone });
@@ -139,7 +249,6 @@ export function getTaskWindowDates(window_start: string, window_end: string, tim
 
 export type TaskState = 'locked' | 'active' | 'expired' | 'done';
 
-/** Determine the visual state of a task based on current time and completion status */
 export function getTaskState(task: any, now: Date = new Date()): TaskState {
   if (task.completed) return 'done';
   const tz = task.timezone || 'Asia/Riyadh';
@@ -149,27 +258,23 @@ export function getTaskState(task: any, now: Date = new Date()): TaskState {
   return 'expired';
 }
 
-/** Minutes remaining until the task's window closes */
 export function getMinutesUntilWindowEnd(task: any, now: Date = new Date()): number {
   const tz = task.timezone || 'Asia/Riyadh';
   const { end } = getTaskWindowDates(task.window_start || '00:00', task.window_end || '23:59', tz);
   return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60)));
 }
 
-/** Minutes remaining until the task's window opens */
 export function getMinutesUntilWindowStart(task: any, now: Date = new Date()): number {
   const tz = task.timezone || 'Asia/Riyadh';
   const { start } = getTaskWindowDates(task.window_start || '00:00', task.window_end || '23:59', tz);
   return Math.max(0, Math.ceil((start.getTime() - now.getTime()) / (1000 * 60)));
 }
 
-/** Get the start time of a task in minutes from midnight (for sorting) */
 export function getTaskStartMinutes(task: any): number {
   const [h, m] = (task.window_start || '00:00').split(':').map(Number);
   return h * 60 + m;
 }
 
-/** Build a sorted list of timeline items: tasks + a "now" marker inserted at the correct position */
 export function buildTimelineItems(tasks: any[], now: Date = new Date()): Array<
   | { kind: 'task'; task: any; startMinutes: number }
   | { kind: 'now'; startMinutes: number }
@@ -188,7 +293,6 @@ export function buildTimelineItems(tasks: any[], now: Date = new Date()): Array<
   > = [];
 
   let nowInserted = false;
-
   for (const item of taskItems) {
     if (!nowInserted && nowMinutes < item.startMinutes) {
       items.push({ kind: 'now', startMinutes: nowMinutes });
@@ -196,10 +300,8 @@ export function buildTimelineItems(tasks: any[], now: Date = new Date()): Array<
     }
     items.push(item);
   }
-
   if (!nowInserted) {
     items.push({ kind: 'now', startMinutes: nowMinutes });
   }
-
   return items;
 }
