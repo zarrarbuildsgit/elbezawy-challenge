@@ -153,9 +153,9 @@ export default function App() {
     }
   }, []);
 
-  // Fetch Adhan times on mount — caches daily in localStorage, triggers task refresh
+  // Fetch Adhan times on mount — pass user's selected timezone for correct method + local times
   useEffect(() => {
-    fetchAndCacheAdhan().then((timings) => {
+    fetchAndCacheAdhan(settingsTimezone).then((timings) => {
       // If we got fresh timings (not cached), bump refreshTrigger so new tasks use real times
       const today = new Date().toLocaleDateString('sv');
       const wasAlreadyCached = !!localStorage.getItem(`elbezawi_adhan_${today}_prev`);
@@ -1078,7 +1078,7 @@ export default function App() {
               </button>
             </div>
 
-            {scheduleTab === 'prayer' && <PrayerSchedule lang={lang} />}
+            {scheduleTab === 'prayer' && <PrayerSchedule lang={lang} timezone={settingsTimezone} />}
             {scheduleTab === 'daily' && <ScheduleBuilder userId={currentUser.id} lang={lang} />}
           </div>
         )}

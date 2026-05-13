@@ -45,19 +45,45 @@ const TZ_COORDS: Record<string, [number, number]> = {
 export function getAdhanTimings(): AdhanTimings {
   if (typeof window === 'undefined') return DEFAULT_ADHAN_TIMINGS;
   const today = new Date().toLocaleDateString('sv');
+  const tz = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone.replace(/\//g,'_') : 'UTC';
   try {
-    const raw = localStorage.getItem(`elbezawi_adhan_${today}`);
+    const raw = localStorage.getItem(`elbezawi_adhan_${today}_${tz}`);
     if (raw) return { ...DEFAULT_ADHAN_TIMINGS, ...JSON.parse(raw) };
   } catch { /* silent */ }
   return DEFAULT_ADHAN_TIMINGS;
 }
 
-/** Fetch today's adhan timings from api.aladhan.com and cache in localStorage */
-export async function fetchAndCacheAdhan(): Promise<AdhanTimings> {
-  if (typeof window === 'undefined') return DEFAULT_ADHAN_TIMINGS;
-  const today = new Date().toLocaleDateString('sv');
-  const cacheKey = `elbezawi_adhan_${today}`;
+/** Derive Adhan calculation method from IANA timezone string */
+function getAdhanMethod(tz: string): number {
+  // Specific overrides for known standards
+  if (tz === 'Asia/Karachi')                         return 1;  // University of Islamic Sciences, Karachi
+  if (['Asia/Riyadh','Asia/Jeddah','Asia/Mecca',
+       'Asia/Bahrain','Asia/Muscat'].includes(tz))   return 4;  // Umm al-Qura, Makkah
+  if (tz === 'Africa/Cairo')                         return 5;  // Egyptian General Authority
+  if (['Asia/Singapore','Asia/Kuala_Lumpur',
+       'Asia/Jakarta','Asia/Makassar'].includes(tz)) return 11; // MUIS Singapore (widely used in SEA)
+  if (tz === 'Asia/Tehran')                          return 7;  // University of Tehran
+  if (tz === 'Asia/Kuwait')                          return 9;  // Kuwait
+  if (tz === 'Asia/Qatar')                           return 10; // Qatar
+  if (['Europe/Istanbul','Asia/Istanbul'].includes(tz)) return 13; // Diyanet, Turkey
+  if (['Asia/Dubai','Asia/Abu_Dhabi'].includes(tz))  return 4;  // UAE → Umm al-Qura
 
+  // Prefix-based fallback — covers every other IANA timezone
+  if (tz.startsWith('America/'))   return 2;  // ISNA
+  if (tz.startsWith('Europe/'))    return 3;  // Muslim World League
+  return 3;                                   // Default: Muslim World League (globally accepted)
+}
+
+/** Fetch today's adhan timings from api.aladhan.com and cache in localStorage.
+ *  Pass userTimezone (the one selected in app settings) for correct local times + method. */
+export async function fetchAndCacheAdhan(userTimezone?: string): Promise<AdhanTimings> {
+  if (typeof window === 'undefined') return DEFAULT_ADHAN_TIMINGS;
+
+  const tz = userTimezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const today = new Date().toLocaleDateString('sv');
+  const cacheKey = `elbezawi_adhan_${today}_${tz.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+  // Return cached if available
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try { return { ...DEFAULT_ADHAN_TIMINGS, ...JSON.parse(cached) }; } catch { /* fall through */ }
@@ -72,14 +98,15 @@ export async function fetchAndCacheAdhan(): Promise<AdhanTimings> {
     lat = pos.coords.latitude;
     lng = pos.coords.longitude;
   } catch {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const coords = TZ_COORDS[tz];
     if (coords) { lat = coords[0]; lng = coords[1]; }
   }
 
+  const method = getAdhanMethod(tz);
+
   try {
     const res = await fetch(
-      `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lng}&method=4`
+      `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lng}&method=${method}&timezonestring=${encodeURIComponent(tz)}`
     );
     if (res.ok) {
       const json = await res.json();
@@ -88,7 +115,7 @@ export async function fetchAndCacheAdhan(): Promise<AdhanTimings> {
         const keys: (keyof AdhanTimings)[] = ['Fajr','Sunrise','Dhuhr','Asr','Maghrib','Isha','Lastthird'];
         const clean: Partial<AdhanTimings> = {};
         for (const k of keys) {
-          if (raw[k]) clean[k] = raw[k].replace(/\s*\(.*\)/, '').trim(); // strip " (+01)" suffix
+          if (raw[k]) clean[k] = raw[k].replace(/\s*\(.*\)/, '').trim();
         }
         const timings = { ...DEFAULT_ADHAN_TIMINGS, ...clean };
         localStorage.setItem(cacheKey, JSON.stringify(timings));
@@ -101,6 +128,8 @@ export async function fetchAndCacheAdhan(): Promise<AdhanTimings> {
 
   return DEFAULT_ADHAN_TIMINGS;
 }
+
+
 
 /** Add N minutes to an "HH:MM" string, clamped to 23:59 */
 function addMinutes(time: string, n: number): string {

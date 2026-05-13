@@ -3,6 +3,7 @@ import { getAdhanTimings, fetchAndCacheAdhan, DEFAULT_ADHAN_TIMINGS, AdhanTiming
 
 interface PrayerScheduleProps {
   lang: 'ar' | 'en'
+  timezone?: string
 }
 
 const GOLD = '#C9A84C'
@@ -70,7 +71,7 @@ function formatCountdown(targetMin: number, nowMin: number): string {
   return `${h}h ${m}m`
 }
 
-export default function PrayerSchedule({ lang }: PrayerScheduleProps) {
+export default function PrayerSchedule({ lang, timezone }: PrayerScheduleProps) {
   const isRtl = lang === 'ar'
   const [timings, setTimings] = useState<AdhanTimings>(() => getAdhanTimings())
   const [now, setNow] = useState(new Date())
@@ -79,7 +80,7 @@ export default function PrayerSchedule({ lang }: PrayerScheduleProps) {
   // Refresh adhan every time component mounts & tick every minute
   useEffect(() => {
     setLoading(true)
-    fetchAndCacheAdhan().then(t => {
+    fetchAndCacheAdhan(timezone).then(t => {
       setTimings(t)
       setLoading(false)
     }).catch(() => setLoading(false))
