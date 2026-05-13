@@ -18,6 +18,7 @@ import {
 } from './lib/tasks';
 import ChatWidget from './components/ChatWidget';
 import ScheduleBuilder from './components/ScheduleBuilder';
+import PrayerSchedule from './components/PrayerSchedule';
 import { useLanguage } from './hooks/useLanguage';
 import LanguageToggle from './components/LanguageToggle';
 import { startWhopLogin, getWhopUser, clearWhopUser, refreshWhopToken, isTokenExpired, adminBypassLogin } from './lib/whop';
@@ -87,6 +88,7 @@ export default function App() {
   useEffect(() => { clearPlaceholderData(); }, []);
   const [settingsTimezone, setSettingsTimezone] = useState(detectTimezone());
   const [settingsDisplayName, setSettingsDisplayName] = useState('');
+  const [scheduleTab, setScheduleTab] = useState<'prayer' | 'daily'>('prayer');
   const [route, setRoute] = useState<string>(window.location.hash || '#/');
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [todayTasks, setTodayTasks] = useState<any[]>([]);
@@ -1049,10 +1051,35 @@ export default function App() {
           </div>
         )}
 
-        {/* VIEW 3: MY SCHEDULE (ScheduleBuilder) */}
+        {/* VIEW 3: MY SCHEDULE — Prayer + Daily tabs */}
         {route === '#/schedule' && currentUser && (
-          <div className="animate-fade-in">
-            <ScheduleBuilder userId={currentUser.id} lang={lang} />
+          <div className="animate-fade-in max-w-2xl mx-auto px-4 pt-4">
+            {/* Tab switcher */}
+            <div className="flex gap-2 mb-6 bg-[#121212] p-1 rounded-2xl border border-white/5">
+              <button
+                onClick={() => setScheduleTab('prayer')}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  scheduleTab === 'prayer'
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                🕌 {lang === 'ar' ? 'أوقات الصلاة' : 'Prayer Times'}
+              </button>
+              <button
+                onClick={() => setScheduleTab('daily')}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                  scheduleTab === 'daily'
+                    ? 'bg-[#C9A84C] text-[#0D0D0D]'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                📅 {lang === 'ar' ? 'جدولي اليومي' : 'Daily Schedule'}
+              </button>
+            </div>
+
+            {scheduleTab === 'prayer' && <PrayerSchedule lang={lang} />}
+            {scheduleTab === 'daily' && <ScheduleBuilder userId={currentUser.id} lang={lang} />}
           </div>
         )}
 
