@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Send, Sparkles, Loader2 } from 'lucide-react';
-import { db, callOpenRouter } from '../lib/supabase';
+import { callGemini } from '../lib/gemini';
 import { useLanguage } from '../hooks/useLanguage';
 
 interface Message {
@@ -23,7 +23,6 @@ export default function ChatWidget() {
   ]);
   const [inputValue, setInputValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [knowledgeContext, setKnowledgeContext] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Re-generate greeting when language changes (only if no user messages yet)
@@ -40,20 +39,6 @@ export default function ChatWidget() {
       return prev;
     });
   }, [lang]);
-
-  // Load knowledge base to pass to OpenRouter
-  useEffect(() => {
-    async function loadKnowledge() {
-      try {
-        const kb = await db.getKnowledgeBase();
-        const concatenated = kb.map((item: any) => `- ${item.title}: ${item.content}`).join('\n');
-        setKnowledgeContext(concatenated);
-      } catch (e) {
-        console.error('Failed to load knowledge base context:', e);
-      }
-    }
-    loadKnowledge();
-  }, []);
 
   // Scroll to bottom on new message
   useEffect(() => {
@@ -88,7 +73,7 @@ export default function ChatWidget() {
         content: m.content
       }));
 
-      const reply = await callOpenRouter(apiMessages, knowledgeContext);
+      const reply = await callGemini(apiMessages);
 
       const botMsg: Message = {
         role: 'assistant',
