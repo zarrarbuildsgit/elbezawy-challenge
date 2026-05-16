@@ -1362,9 +1362,9 @@ export const callOpenRouter = async (messages: { role: string; content: string }
 
   // Free models on OpenRouter — try in order
   const FREE_MODELS = [
-    'google/gemini-2.0-flash-exp:free',
-    'meta-llama/llama-3.3-8b-instruct:free',
-    'mistralai/mistral-7b-instruct:free',
+    'deepseek/deepseek-v4-flash:free',
+    'google/gemma-4-31b-it:free',
+    'meta-llama/llama-3.3-70b-instruct:free',
   ];
 
   if (OPENROUTER_API_KEY) {
