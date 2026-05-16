@@ -1,28 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import { getDailyTasks, CORE_TASK_IDS, BONUS_TASK_IDS, detectTimezone } from './tasks';
 
-// Environment variables detection
-// Vite loads from import.meta.env, we support standard VITE_ and NEXT_ prefixes
-const metaAny = import.meta as any;
-const SUPABASE_URL = 
-  metaAny.env?.VITE_SUPABASE_URL || 
-  metaAny.env?.NEXT_PUBLIC_SUPABASE_URL || 
-  (window as any)._SUPABASE_URL || '';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const OPENROUTER_API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
+console.log('KEY_CHECK:', OPENROUTER_API_KEY ? '✅ set' : '❌ empty');
 
-const SUPABASE_ANON_KEY = 
-  metaAny.env?.VITE_SUPABASE_ANON_KEY || 
-  metaAny.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-  (window as any)._SUPABASE_ANON_KEY || '';
-
-const OPENROUTER_API_KEY = 
-  metaAny.env?.VITE_OPENROUTER_API_KEY || 
-  metaAny.env?.NEXT_PUBLIC_OPENROUTER_API_KEY || 
-  (window as any)._OPENROUTER_API_KEY || '';
-  console.log('KEY_CHECK:', OPENROUTER_API_KEY ? '✅ set' : '❌ empty');
-
-// Initialize real Supabase client if keys are provided
-export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) 
-  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
+export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 // Hardcoded admin whitelist array
