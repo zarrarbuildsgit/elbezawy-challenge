@@ -5,19 +5,13 @@ import { getDailyTasks, CORE_TASK_IDS, BONUS_TASK_IDS, detectTimezone } from './
 // Vite loads from import.meta.env, we support standard VITE_ and NEXT_ prefixes
 const metaAny = import.meta as any;
 const SUPABASE_URL = 
-  metaAny.env?.VITE_SUPABASE_URL || 
-  metaAny.env?.NEXT_PUBLIC_SUPABASE_URL || 
-  (window as any)._SUPABASE_URL || '';
+  metaAny.env?.VITE_SUPABASE_URL;
 
 const SUPABASE_ANON_KEY = 
-  metaAny.env?.VITE_SUPABASE_ANON_KEY || 
-  metaAny.env?.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
-  (window as any)._SUPABASE_ANON_KEY || '';
+  metaAny.env?.VITE_SUPABASE_ANON_KEY;
 
 const OPENROUTER_API_KEY = 
-  metaAny.env?.VITE_OPENROUTER_API_KEY || 
-  metaAny.env?.NEXT_PUBLIC_OPENROUTER_API_KEY || 
-  (window as any)._OPENROUTER_API_KEY || '';
+  metaAny.env?.VITE_OPENROUTER_API_KEY;
   console.log('KEY_CHECK:', VITE_OPENROUTER_API_KEY ? '✅ set' : '❌ empty');
 
 // Initialize real Supabase client if keys are provided
