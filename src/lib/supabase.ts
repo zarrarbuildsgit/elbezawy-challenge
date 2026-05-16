@@ -328,7 +328,7 @@ export async function validatePhotoWithAI(
         'X-Title': 'ElBezawy Challenge'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-12b-it:free',
+        model: 'google/gemini-2.0-flash-exp:free',
         messages: [
           {
             role: 'user',
@@ -1319,94 +1319,96 @@ export const db = {
 };
 
 // Chat widget API helper to OpenRouter
-export const callOpenRouter = async (messages: { role: string; content: string }[], knowledgeContext: string) => {
+export const callOpenRouter = async (messages: { role: string; content: string }[], _knowledgeContext?: string) => {
   const lang = (typeof window !== 'undefined' ? localStorage.getItem('elbezawi_lang') : 'ar') as 'ar' | 'en';
-  const isAr = lang === 'ar';
+  const isAr = lang !== 'en';
+
+  const SYSTEM_PROMPT = `
+أنت مساعد تحدي البزاوي الذكي — مدرب عقلية متخصص مبني على محتوى برنامج ElBezawy الحصري.
+
+## هويتك:
+- اسمك: مساعد البزاوي
+- أسلوبك: مباشر، عملي، بدون مبالغة
+- تجيب بنفس لغة المستخدم (عربي←عربي، إنجليزي←إنجليزي)
+- ردودك مختصرة وعملية — لا خطب طويلة (3-5 جمل كحد أقصى)
+
+## التحدي — 9 مهام أساسية + 2 إضافية:
+المهام الروحانية (بينك وبين الله — بدون صورة): صلاة الفجر، أذكار الصباح، الظهر، العصر، المغرب، العشاء، قراءة القرآن
+المهام البدنية/الذهنية (تحتاج صورة إثبات): تمرين 30 دقيقة (طوال اليوم)، مراجعة الأهداف (بعد العصر)
+مهام إضافية (نقاط إضافية): قيام الليل ⭐، السنن الرواتب ⭐ (2 قبل الفجر، 4+2 قبل/بعد الظهر، 2 بعد المغرب، 2 بعد العشاء)
+الهدف: 30 يوماً متواصلة — كسر السلسلة = الرجوع للصفر
+
+## وحدات العقلية:
+
+### الوحدة 2 — رؤية العادة المؤجلة:
+الفرق: "أنا كسول" = حكم عام. "أنا أؤجل" = سلوك يمكن تغييره.
+التأجيل يبدأ بجملة ناعمة: "سأبدأ غداً". الاعتراف بالنمط ليس فشلاً — هو بداية التحرر منه.
+
+### الوحدة 3 — كسر وهم الاستعداد الكامل:
+لا تحتاج أن تكون جاهزاً بالكامل. السؤال الصحيح: "ما هو الفعل الصغير الواضح الذي يمكنني فعله الآن؟"
+
+### الوحدة 4 — أول خطوة قابلة للتنفيذ:
+اختر خطوة واحدة صغيرة ومحددة يمكنك تنفيذها اليوم. اختبرها: "هل أستطيع فعلها الآن دون تجهيز طويل؟"
+
+### الوحدة 5 — تنفيذ البداية دون تفاوض داخلي:
+لا تسأل "كيف أقتنع؟" — اسأل "ما الذي سأفعله الآن حتى لو لم أكن مقتنعاً بالكامل؟"
+
+## قواعد الرد:
+1. لا محاضرات طويلة — 3-5 جمل عملية كحد أقصى
+2. اربط المشاكل الشخصية بمحتوى الوحدات
+3. أجب على أسئلة المهام بدقة ومباشرة
+4. تكلم بثقة — لا تقل "كما ذكر البزاوي"
+`.trim();
+
+  // Free models on OpenRouter — try in order
+  const FREE_MODELS = [
+    'google/gemini-2.0-flash-exp:free',
+    'meta-llama/llama-3.3-8b-instruct:free',
+    'mistralai/mistral-7b-instruct:free',
+  ];
 
   if (OPENROUTER_API_KEY) {
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': window.location.origin,
-          'X-Title': 'ElBezawy Challenge'
-        },
-        body: JSON.stringify({
-          model: 'openrouter/owl-alpha',
-          messages: [
-            {
-              role: 'system',
-              content: `You are ElBezawy's challenge assistant. Answer only based on the knowledge provided below. Be concise. Respond in ${isAr ? 'Arabic' : 'English'}.\n\nKNOWLEDGE:\n${knowledgeContext}`
-            },
-            ...messages
-          ]
-        })
-      });
+    for (const model of FREE_MODELS) {
+      try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://elbezawy-challenge.vercel.app',
+            'X-Title': 'ElBezawy Challenge'
+          },
+          body: JSON.stringify({
+            model,
+            max_tokens: 512,
+            temperature: 0.7,
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              ...messages.slice(-8) // last 8 messages for context window
+            ]
+          })
+        });
 
-      if (response.ok) {
-        const data = await response.json();
-        const content = data?.choices?.[0]?.message?.content;
-        if (content) return content;
+        if (response.ok) {
+          const data = await response.json();
+          const reply = data?.choices?.[0]?.message?.content?.trim();
+          if (reply) return reply;
+        }
+
+        // Rate limited or model down — try next
+        if (response.status === 429 || response.status === 503) continue;
+        // Other errors — break and use fallback
+        break;
+
+      } catch (e) {
+        console.warn(`OpenRouter model ${model} failed:`, e);
+        continue;
       }
-    } catch (e) {
-      console.error("OpenRouter API call failed:", e);
     }
   }
 
-  const lastUserMsg = messages[messages.length - 1]?.content || '';
-  await new Promise((resolve) => setTimeout(resolve, 800));
-
-      const arGreetings = ['سلام', 'مرحبا', 'أهلاً', 'اهلاً', 'hello', 'hi', 'hey'];
-      const arChallenge = ['تحدي', 'البزاوي', 'ما هو', 'what is', 'challenge'];
-      const arTasks = ['مهام', 'المهام', 'الست', 'tasks', 'daily'];
-      const arStreak = ['سلسلة', 'الترتيب', 'streak', 'ستريك'];
-      const arProof = ['إثبات', 'صورة', 'رفع', 'proof', 'upload'];
-      const arAdmin = ['أدمن', 'إدارة', 'مشرف', 'admin', 'moderator'];
-    
-      const hasAny = (keywords: string[]) => keywords.some(k => lastUserMsg.toLowerCase().includes(k.toLowerCase()));
-    
-      if (hasAny(arGreetings)) {
-        return isAr
-          ? 'أهلاً بك! أنا المساعد الذكي لتحدي البزاوي 🏆. كيف يمكنني مساعدتك اليوم بخصوص المهام أو السلسلة؟'
-          : 'Welcome! I am ElBezawy\'s AI assistant 🏆. How can I help you today regarding tasks or your streak?';
-      }
-      if (hasAny(arChallenge)) {
-        return isAr
-          ? 'تحدي البزاوي هو تحدٍ يومي مكثف لـ 30 يوماً متواصلة لبناء العادات والالتزام، يحتوي على 6 مهام يومية: 3 روحانية و3 بدنية/ذهنية.'
-          : 'The ElBezawy Challenge is an intense 30-day daily challenge to build habits and commitment, with 6 daily tasks: 3 spiritual and 3 physical/mental.';
-      }
-  if (hasAny(arTasks)) {
-    return isAr
-      ? 'المهام اليومية الستة هي:\n1. صلاة الفجر (05:00-07:00)\n2. أذكار الصباح (06:00-09:00)\n3. تمرين 30 دقيقة (07:00-12:00)\n4. قراءة 10 صفحات (10:00-14:00)\n5. مراجعة الأهداف (16:00-20:00)\n6. قراءة القرآن (20:00-23:59)\n\nالمهام الروحانية لا تحتاج صورة، البدنية والذهنية تحتاج صورة إثبات.'
-      : 'The six daily tasks are:\n1. Fajr Prayer (05:00-07:00)\n2. Morning Adhkar (06:00-09:00)\n3. 30-min Workout (07:00-12:00)\n4. Read 10 Pages (10:00-14:00)\n5. Review Goals (16:00-20:00)\n6. Read Quran (20:00-23:59)\n\nSpiritual tasks need no photo — physical and mental tasks require photo proof.';
-  }
-  if (hasAny(arStreak)) {
-    return isAr
-      ? 'تحصل على زيادة في سلسلة الالتزام اليومية (Streak) عند إتمام المهام الستة. المهام الروحانية لا تكسر السلسلة إذا فُوِّتت — هي بينك وبين الله. أما المهام البدنية والذهنية التي تتطلب صورة، فإن فواتها يكسر السلسلة.'
-      : 'Your streak increases when you complete all six tasks. Spiritual tasks don\'t break the streak if missed — they\'re between you and Allah. But missing a physical or mental task that requires photo proof will break your streak.';
-  }
-  if (hasAny(arProof)) {
-    return isAr
-      ? 'المهام الروحانية (الفجر، الأذكار، القرآن) لا تحتاج إثبات — اضغط على الزر فقط. المهام البدنية والذهنية (تمرين، قراءة، أهداف) تتطلب رفع صورة إثبات مصورة.'
-      : 'Spiritual tasks (Fajr, Adhkar, Quran) need no proof — just tap the button. Physical and mental tasks (workout, reading, goals) require uploading a photo proof.';
-  }
-  if (hasAny(arAdmin)) {
-    return isAr
-      ? 'يقوم مشرفو التحدي بمراجعة الإثباتات المرفوعة وتفعيل أو تعطيل الحسابات غير الجادة لضمان نزاهة لوحة المتصدرين.'
-      : 'Challenge admins review uploaded proofs and can activate or deactivate accounts to ensure leaderboard integrity.';
-  }
-
-  const match = DEFAULT_KNOWLEDGE_BASE.find(item => 
-    lastUserMsg.toLowerCase().split(' ').some(word => word.length > 3 && item.content.includes(word))
-  );
-
-  if (match) {
-    return `بناءً على معلومات التحدي: ${match.content}`;
-  }
-
+  // Dumb fallback if all models fail or no API key
   return isAr
-    ? 'عذراً، لم أستوعب السؤال تماماً. أنا مبرمج للإجابة فقط على الأسئلة المتعلقة بتحدي البزاوي وقواعده ومهامه الستة. هل تود الاستفسار عن المهام، السلسلة، أو رفع الإثباتات؟ 📚🏋️‍♂️🎯'
-    : 'Sorry, I didn\'t quite understand. I\'m designed to answer questions about ElBezawy\'s challenge, rules, and six tasks. Would you like to ask about tasks, streaks, or uploading proof? 📚🏋️‍♂️🎯';
+    ? 'عذراً، المساعد الذكي غير متاح حالياً. حاول مرة أخرى بعد قليل.'
+    : 'Sorry, the AI assistant is temporarily unavailable. Try again in a moment.';
 };
