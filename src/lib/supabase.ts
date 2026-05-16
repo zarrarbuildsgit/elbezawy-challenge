@@ -1393,12 +1393,11 @@ export const callOpenRouter = async (messages: { role: string; content: string }
           const data = await response.json();
           const reply = data?.choices?.[0]?.message?.content?.trim();
           if (reply) return reply;
+        } else {
+          const errText = await response.text().catch(() => '');
+          console.warn(`OpenRouter ${model} → ${response.status}: ${errText.slice(0, 200)}`);
+          continue; // always try next model
         }
-
-        // Rate limited or model down — try next
-        if (response.status === 429 || response.status === 503) continue;
-        // Other errors — break and use fallback
-        break;
 
       } catch (e) {
         console.warn(`OpenRouter model ${model} failed:`, e);
