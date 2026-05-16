@@ -18,7 +18,7 @@ const OPENROUTER_API_KEY =
   metaAny.env?.VITE_OPENROUTER_API_KEY || 
   metaAny.env?.NEXT_PUBLIC_OPENROUTER_API_KEY || 
   (window as any)._OPENROUTER_API_KEY || '';
-  console.log('KEY_CHECK:', OPENROUTER_API_KEY ? '✅ set' : '❌ empty');
+  console.log('KEY_CHECK:', VITE_OPENROUTER_API_KEY ? '✅ set' : '❌ empty');
 
 // Initialize real Supabase client if keys are provided
 export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) 
