@@ -3,7 +3,7 @@
  * Prayers synced to real adhan times via api.aladhan.com (cached daily in localStorage)
  */
 
-export const CORE_TASK_IDS  = ['fajr', 'adhkar', 'dhuhr', 'asr', 'exercise', 'maghrib', 'goals', 'isha', 'quran'] as const;
+export const CORE_TASK_IDS  = ['fajr', 'adhkar', 'dhuhr', 'asr', 'exercise', 'cardio', 'meal', 'cold_shower', 'mindful_breathing', 'maghrib', 'goals', 'isha', 'quran'] as const;
 export const BONUS_TASK_IDS = ['qiyam', 'sunnah'] as const;
 export type CoreTaskId  = typeof CORE_TASK_IDS[number];
 export type BonusTaskId = typeof BONUS_TASK_IDS[number];
@@ -149,6 +149,7 @@ export function getDailyTasks() {
       id: 'fajr',
       title_ar: 'صلاة الفجر',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Fajr,
       window_end: t.Sunrise,
       requires_photo: false,
@@ -159,6 +160,7 @@ export function getDailyTasks() {
       id: 'adhkar',
       title_ar: 'أذكار الصباح',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Fajr,
       window_end: adhkarEnd,
       requires_photo: false,
@@ -169,6 +171,7 @@ export function getDailyTasks() {
       id: 'dhuhr',
       title_ar: 'صلاة الظهر',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Dhuhr,
       window_end: addMinutes(t.Dhuhr, 60),
       requires_photo: false,
@@ -179,6 +182,7 @@ export function getDailyTasks() {
       id: 'asr',
       title_ar: 'صلاة العصر',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Asr,
       window_end: t.Maghrib,
       requires_photo: false,
@@ -187,8 +191,9 @@ export function getDailyTasks() {
     },
     {
       id: 'exercise',
-      title_ar: 'تمرين ٣٠ دقيقة',
+      title_ar: 'تمرين (ورك أوت)',
       type: 'physical',
+      section: 'physical',
       window_start: '00:00',
       window_end: '23:59',
       requires_photo: true,
@@ -196,11 +201,56 @@ export function getDailyTasks() {
       is_bonus: false
     },
     {
+      id: 'cardio',
+      title_ar: 'كارديو',
+      type: 'physical',
+      section: 'physical',
+      window_start: '00:00',
+      window_end: '23:59',
+      requires_photo: true,
+      note_ar: 'أرسل صورة كدليل على الإنجاز',
+      is_bonus: false
+    },
+    {
+      id: 'meal',
+      title_ar: 'وجبة صحية',
+      type: 'physical',
+      section: 'physical',
+      window_start: '00:00',
+      window_end: '23:59',
+      requires_photo: true,
+      note_ar: 'صورة لوجبتك الصحية',
+      is_bonus: false
+    },
+    {
       id: 'maghrib',
       title_ar: 'صلاة المغرب',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Maghrib,
       window_end: addMinutes(t.Maghrib, 30),
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
+      id: 'cold_shower',
+      title_ar: 'حمام بارد',
+      type: 'mental',
+      section: 'mindset',
+      window_start: '00:00',
+      window_end: '23:59',
+      requires_photo: false,
+      note_ar: 'بينك وبين الله — لا إثبات مطلوب',
+      is_bonus: false
+    },
+    {
+      id: 'mindful_breathing',
+      title_ar: 'تنفس واعي',
+      type: 'mental',
+      section: 'mindset',
+      window_start: '00:00',
+      window_end: '23:59',
       requires_photo: false,
       note_ar: 'بينك وبين الله — لا إثبات مطلوب',
       is_bonus: false
@@ -209,6 +259,7 @@ export function getDailyTasks() {
       id: 'goals',
       title_ar: 'مراجعة الأهداف',
       type: 'mental',
+      section: 'mindset',
       window_start: t.Asr,
       window_end: t.Maghrib,
       requires_photo: true,
@@ -219,6 +270,7 @@ export function getDailyTasks() {
       id: 'isha',
       title_ar: 'صلاة العشاء',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Isha,
       window_end: addMinutes(t.Isha, 30),
       requires_photo: false,
@@ -229,6 +281,7 @@ export function getDailyTasks() {
       id: 'quran',
       title_ar: 'قراءة القرآن',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Isha,
       window_end: '23:59',
       requires_photo: false,
@@ -240,6 +293,7 @@ export function getDailyTasks() {
       id: 'qiyam',
       title_ar: 'قيام الليل',
       type: 'spiritual',
+      section: 'soul',
       window_start: t.Lastthird,
       window_end: t.Fajr,
       requires_photo: false,
@@ -250,6 +304,7 @@ export function getDailyTasks() {
       id: 'sunnah',
       title_ar: 'السنن الرواتب',
       type: 'spiritual',
+      section: 'soul',
       window_start: '00:00',
       window_end: '23:59',
       requires_photo: false,

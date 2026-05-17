@@ -11,7 +11,6 @@ import {
   formatTimeEastern,
   getTaskState,
   getMinutesUntilWindowEnd,
-  buildTimelineItems,
   fetchAndCacheAdhan,
   CORE_TASK_IDS,
   BONUS_TASK_IDS
@@ -41,7 +40,11 @@ const PRESET_PROOFS = [
 const TASK_TITLE_EN: Record<string, string> = {
   fajr: 'Fajr Prayer',
   adhkar: 'Morning Adhkar',
-  exercise: '30-min Workout',
+  exercise: 'Workout',
+  cardio: 'Cardio',
+  meal: 'Healthy Meal',
+  cold_shower: 'Cold Shower',
+  mindful_breathing: 'Mindful Breathing',
   dhuhr: 'Dhuhr Prayer',
   asr: 'Asr Prayer',
   maghrib: 'Maghrib Prayer',
@@ -56,6 +59,10 @@ const TASK_NOTE_EN: Record<string, string> = {
   fajr: 'This is between you and Allah — no proof required',
   adhkar: 'This is between you and Allah — no proof required',
   exercise: 'Upload a photo as proof of completion',
+  cardio: 'Upload a photo as proof of completion',
+  meal: 'Photo of your healthy meal',
+  cold_shower: 'This is between you and Allah — no proof required',
+  mindful_breathing: 'This is between you and Allah — no proof required',
   dhuhr: 'This is between you and Allah — no proof required',
   asr: 'This is between you and Allah — no proof required',
   maghrib: 'This is between you and Allah — no proof required',
@@ -451,7 +458,6 @@ export default function App() {
   const scheduleTasks = todayTasks.filter(t => t.task_id);
   const coreTasks = scheduleTasks.filter(t => (CORE_TASK_IDS as readonly string[]).includes(t.task_id));
   const bonusTasks = scheduleTasks.filter(t => (BONUS_TASK_IDS as readonly string[]).includes(t.task_id));
-  const timelineItems = buildTimelineItems(scheduleTasks, currentTime);
   const completedCount = coreTasks.filter(t => t.completed).length;
   const bonusCompletedCount = bonusTasks.filter(t => t.completed).length;
 
@@ -874,28 +880,27 @@ export default function App() {
               <div className="flex-1 bg-[#222] h-1.5 rounded-full overflow-hidden">
                 <div 
                   className="bg-[#C9A84C] h-full rounded-full transition-all duration-500"
-                  style={{ width: `${(completedCount / 9) * 100}%` }}
+                  style={{ width: `${(completedCount / CORE_TASK_IDS.length) * 100}%` }}
                 />
               </div>
-              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(9)}{bonusCompletedCount > 0 ? <span style={{color:'#C9A84C99', fontSize:'10px'}}> +{bonusCompletedCount}⭐</span> : null}</span>
+              <span className="text-[#C9A84C] font-bold">{n(completedCount)} / {n(CORE_TASK_IDS.length)}{bonusCompletedCount > 0 ? <span style={{color:'#C9A84C99', fontSize:'10px'}}> +{bonusCompletedCount}⭐</span> : null}</span>
             </div>
 
-            {/* Timeline */}
-            <div className="space-y-2">
-              {timelineItems.map((item, idx) => {
-                if (item.kind === 'now') {
-                  return (
-                    <div key={`now-${idx}`} className="flex items-center gap-3 py-1">
-                      <div className="flex-grow h-[1px] bg-[#C9A84C]/25" />
-                      <span className="text-[10px] font-bold text-[#C9A84C] bg-[#C9A84C]/10 px-2 py-0.5 rounded-full border border-[#C9A84C]/30">
-                        {t('schedule.now')}
-                      </span>
-                      <div className="flex-grow h-[1px] bg-[#C9A84C]/25" />
-                    </div>
-                  );
-                }
+            {/* 3-Column Task Grid */}
+            {(() => {
+              const TASK_SECTION: Record<string, 'physical' | 'mindset' | 'soul'> = {
+                exercise: 'physical', cardio: 'physical', meal: 'physical',
+                cold_shower: 'mindset', mindful_breathing: 'mindset', goals: 'mindset',
+                fajr: 'soul', adhkar: 'soul', dhuhr: 'soul', asr: 'soul',
+                maghrib: 'soul', isha: 'soul', quran: 'soul', qiyam: 'soul', sunnah: 'soul'
+              };
 
-                const task = item.task;
+              const physicalTasks = scheduleTasks.filter(t => TASK_SECTION[t.task_id] === 'physical');
+              const mindsetTasks  = scheduleTasks.filter(t => TASK_SECTION[t.task_id] === 'mindset');
+              const soulCoreTasks = scheduleTasks.filter(t => TASK_SECTION[t.task_id] === 'soul' && !(BONUS_TASK_IDS as readonly string[]).includes(t.task_id));
+              const soulBonusTasks = scheduleTasks.filter(t => TASK_SECTION[t.task_id] === 'soul' && (BONUS_TASK_IDS as readonly string[]).includes(t.task_id));
+
+              const renderCard = (task: any) => {
                 const isBonus = (BONUS_TASK_IDS as readonly string[]).includes(task.task_id);
                 const state = getTaskState(task, currentTime);
                 const isActive = state === 'active';
@@ -903,156 +908,156 @@ export default function App() {
                 const isExpired = state === 'expired';
                 const minutesLeft = isActive ? getMinutesUntilWindowEnd(task, currentTime) : 0;
 
-                 return (
+                return (
                   <div
                     key={task.id}
-                    ref={isActive ? activeTaskRef : null}
-                    data-active={isActive ? 'true' : 'false'}
-                    className={`relative rounded-xl border transition-all duration-200 overflow-hidden ${
-                      isDone 
+                    ref={isActive && !isDone ? activeTaskRef : null}
+                    className={`relative rounded-xl border p-2.5 transition-all duration-200 ${
+                      isDone
                         ? (task.type === 'spiritual' ? 'bg-[#0a1a0a] border-emerald-500/25' : 'bg-green-950/20 border-green-500/20')
-                        : isExpired 
-                          ? 'bg-[#121212] border-red-500/15 opacity-60' 
-                          : isActive 
-                            ? 'bg-[#161616] border-[#C9A84C]/40 shadow-lg shadow-[#C9A84C]/5' 
-                            : 'bg-[#121212] border-white/5 opacity-50'
+                        : isExpired
+                          ? 'bg-[#121212] border-red-500/15 opacity-55'
+                          : isActive
+                            ? 'bg-[#161616] border-[#C9A84C]/40 shadow-md shadow-[#C9A84C]/5'
+                            : 'bg-[#121212] border-white/5 opacity-45'
                     }`}
-                    style={{ minHeight: isActive ? '72px' : '56px' }}
                   >
-                    {/* Left/Right RTL accent bar */}
-                    <div className={`absolute top-0 bottom-0 w-1 ${lang === 'ar' ? 'right-0' : 'left-0'} ${
-                      isDone ? 'bg-green-500' : isExpired ? 'bg-red-500/40' : isActive ? 'bg-[#C9A84C]' : 'bg-gray-600/30'
+                    {/* top accent line */}
+                    <div className={`absolute top-0 left-0 right-0 h-0.5 rounded-t-xl ${
+                      isDone ? 'bg-green-500' : isExpired ? 'bg-red-500/40' : isActive ? 'bg-[#C9A84C]' : 'bg-gray-600/20'
                     }`} />
 
-                    <div className={`flex items-center justify-between gap-3 px-3 py-2.5 ${lang === 'ar' ? 'pr-4' : 'pl-4'}`}>
-                      
-                      {/* Left Block: Checkbox (For spiritual tasks) OR Lock/Clock indicator (For others) */}
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        
-                        {/* CHANGE 2 - Beautiful dedicated circular checkbox (40px x 40px) on Spiritual tasks */}
-                        {task.type === 'spiritual' ? (
-                          <button
-                            disabled={!isActive || isDone}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSpiritualComplete(task);
-                            }}
-                            className={`w-10 h-10 rounded-full border-1.5 transition-all duration-200 flex items-center justify-center shrink-0 ${
-                              isDone
-                                ? 'bg-[#C9A84C]/15 border-[#C9A84C] text-[#C9A84C]'
-                                : isActive
-                                  ? 'bg-transparent border-[#C9A84C] hover:bg-[#C9A84C]/5'
-                                  : 'bg-transparent border-gray-600 cursor-not-allowed opacity-50'
-                            }`}
-                          >
-                            {isDone && <Check className="w-5 h-5 text-[#C9A84C]" />}
-                          </button>
-                        ) : (
-                          <div className="shrink-0">
-                            {isDone ? (
-                              <div className="w-6 h-6 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                                <Check className="w-3.5 h-3.5 text-green-400" />
-                              </div>
-                            ) : isExpired ? (
-                              <div className="w-6 h-6 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                                <X className="w-3.5 h-3.5 text-red-400" />
-                              </div>
-                            ) : isActive ? (
-                              <div className="w-6 h-6 rounded-full bg-[#C9A84C]/20 border border-[#C9A84C]/40 flex items-center justify-center">
-                                <span className="w-2 h-2 bg-[#C9A84C] rounded-full animate-pulse" />
-                              </div>
-                            ) : (
-                              <div className="w-6 h-6 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
-                                <Lock className="w-3 h-3 text-gray-500" />
-                              </div>
-                            )}
-                          </div>
-                        )}
+                    {/* task name */}
+                    <p className={`text-[11px] font-bold text-white leading-snug mb-2 ${
+                      isDone && task.type === 'spiritual' ? 'line-through decoration-[#C9A84C]/60 opacity-70' : ''
+                    }`}>
+                      {isBonus && <span className="text-[#C9A84C] mr-0.5">⭐</span>}
+                      {getLocalizedTaskTitle(task, lang)}
+                    </p>
 
-                        {/* Task Title & Details */}
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            {isBonus && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md" style={{ background: 'rgba(201,168,76,0.15)', color: '#C9A84C', border: '1px solid rgba(201,168,76,0.3)' }}>
-                                ⭐ {lang === 'ar' ? 'إضافي' : 'BONUS'}
-                              </span>
-                            )}
-                            <TaskTypeIcon type={task.type} />
-                            <span className={`text-[13px] font-bold text-white truncate ${
-                              isDone && task.type === 'spiritual' ? 'line-through decoration-[#C9A84C] opacity-75' : ''
-                            }`}>
-                              {getLocalizedTaskTitle(task, lang)}
-                            </span>
-                            <TaskTypeLabel type={task.type} lang={lang} />
-                          </div>
-                          <div className="flex items-center gap-2">
-                            {isDone ? (
-                              <span className="text-[10px] text-green-400">
-                                {task.requires_photo && task.photo_url ? (lang === 'ar' ? 'مكتملة بإثبات مصور' : 'Completed with photo') : t('schedule.done')}
-                              </span>
-                            ) : isExpired ? (
-                              <span className="text-[10px] text-red-400">{t('schedule.expired')}</span>
-                            ) : isActive ? (
-                              <span className="text-[10px] text-[#C9A84C]">
-                                {t('schedule.ends_in')} {n(minutesLeft)} {t('schedule.minutes')}
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-gray-500">
-                                {t('schedule.locked')} {getLocalizedTaskTime(task.window_start, lang)}
-                              </span>
-                            )}
-                          </div>
+                    {/* bottom: status + action */}
+                    <div className="flex items-center justify-between gap-1">
+                      <span className={`text-[9px] font-semibold leading-none ${
+                        isDone ? 'text-green-400'
+                        : isExpired ? 'text-red-400'
+                        : isActive ? 'text-[#C9A84C]'
+                        : 'text-gray-600'
+                      }`}>
+                        {isDone
+                          ? (lang === 'ar' ? '✓ مكتمل' : '✓ done')
+                          : isExpired
+                            ? (lang === 'ar' ? 'انتهى' : 'expired')
+                            : isActive
+                              ? `${n(minutesLeft)}${lang === 'ar' ? 'د' : 'm'}`
+                              : getLocalizedTaskTime(task.window_start, lang)}
+                      </span>
 
-                          {/* CHANGE 2 - Spiritual task message depending on checked/unchecked state */}
-                          {task.type === 'spiritual' && (
-                            <span className={`text-[11px] block mt-0.5 font-medium ${
-                              isDone ? 'text-[#5a9a5a]' : 'text-[#C9A84C]/60'
-                            }`}>
-                              {isDone ? t('spiritual.confirmed') : t('spiritual.prompt')}
-                            </span>
-                          )}
-
-                          {task.requires_photo && !isDone && !isExpired && (
-                            <span className="text-[10px] text-amber-500/70 block mt-0.5">{getLocalizedTaskNote(task, lang)}</span>
-                          )}
+                      {/* action */}
+                      {task.type === 'spiritual' || task.type === 'mental' && !task.requires_photo ? (
+                        <button
+                          disabled={!isActive || isDone}
+                          onClick={(e) => { e.stopPropagation(); handleSpiritualComplete(task); }}
+                          className={`w-7 h-7 rounded-full border transition-all flex items-center justify-center shrink-0 ${
+                            isDone
+                              ? 'bg-[#C9A84C]/15 border-[#C9A84C]'
+                              : isActive
+                                ? 'border-[#C9A84C] hover:bg-[#C9A84C]/10'
+                                : 'border-gray-700 cursor-not-allowed'
+                          }`}
+                        >
+                          {isDone && <Check className="w-3.5 h-3.5 text-[#C9A84C]" />}
+                        </button>
+                      ) : isActive && !isDone ? (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setActiveUploadTask(task); }}
+                          className="bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] text-[9px] font-black px-2 py-1.5 rounded-lg transition flex items-center gap-0.5 shrink-0"
+                        >
+                          <Upload className="w-2.5 h-2.5" />
+                          {lang === 'ar' ? 'إثبات' : 'proof'}
+                        </button>
+                      ) : isDone && task.photo_url ? (
+                        <img src={task.photo_url} alt="" className="w-7 h-7 rounded-lg object-cover border border-white/10 shrink-0" />
+                      ) : isDone ? (
+                        <div className="w-7 h-7 rounded-full bg-green-500/20 border border-green-500/30 flex items-center justify-center shrink-0">
+                          <Check className="w-3 h-3 text-green-400" />
                         </div>
-                      </div>
-
-                      {/* Right Block: Actions / Upload Proof Button (For physical/mental tasks) */}
-                      <div className="shrink-0 flex items-center">
-                        {/* CHANGE 1 - "+ إثبات" button appears immediately upon being active & remains until complete */}
-                        {isActive && !isDone && task.requires_photo && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveUploadTask(task);
-                            }}
-                            className="bg-[#C9A84C] hover:bg-[#b0913e] text-[#0D0D0D] text-[11px] font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1"
-                          >
-                            <Upload className="w-3 h-3" />
-                            <span>{t('schedule.proof')}</span>
-                          </button>
-                        )}
-                        {isDone && task.photo_url && (
-                          <img 
-                            src={task.photo_url} 
-                            alt="" 
-                            className="w-10 h-10 rounded-lg object-cover border border-white/10"
-                          />
-                        )}
-                      </div>
-
+                      ) : isExpired ? (
+                        <div className="w-7 h-7 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center shrink-0">
+                          <X className="w-3 h-3 text-red-400" />
+                        </div>
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-white/5 border border-white/8 flex items-center justify-center shrink-0">
+                          <Lock className="w-3 h-3 text-gray-600" />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
-              })}
-            </div>
+              };
+
+              const ColHeader = ({ icon, label, color }: { icon: React.ReactNode; label: string; color: string }) => (
+                <div className={`flex items-center justify-center gap-1.5 pb-2.5 mb-2 border-b`} style={{ borderColor: `${color}30` }}>
+                  <span style={{ color }}>{icon}</span>
+                  <span className="text-[11px] font-black tracking-widest uppercase" style={{ color }}>{label}</span>
+                </div>
+              );
+
+              return (
+                <div className="grid grid-cols-3 gap-2.5">
+                  {/* Physical — RIGHT in RTL */}
+                  <div className="space-y-2">
+                    <ColHeader
+                      icon={<Dumbbell className="w-3.5 h-3.5" />}
+                      label={lang === 'ar' ? 'جسدي' : 'Physical'}
+                      color="#F59E0B"
+                    />
+                    {physicalTasks.length > 0
+                      ? physicalTasks.map(renderCard)
+                      : <p className="text-[10px] text-gray-600 text-center py-4">{lang === 'ar' ? 'لا توجد مهام' : 'No tasks'}</p>
+                    }
+                  </div>
+
+                  {/* Mindset — MIDDLE */}
+                  <div className="space-y-2">
+                    <ColHeader
+                      icon={<BookOpen className="w-3.5 h-3.5" />}
+                      label={lang === 'ar' ? 'ذهني' : 'Mindset'}
+                      color="#38BDF8"
+                    />
+                    {mindsetTasks.length > 0
+                      ? mindsetTasks.map(renderCard)
+                      : <p className="text-[10px] text-gray-600 text-center py-4">{lang === 'ar' ? 'لا توجد مهام' : 'No tasks'}</p>
+                    }
+                  </div>
+
+                  {/* Soul — LEFT in RTL */}
+                  <div className="space-y-2">
+                    <ColHeader
+                      icon={<Heart className="w-3.5 h-3.5" />}
+                      label={lang === 'ar' ? 'روحاني' : 'Soul'}
+                      color="#34D399"
+                    />
+                    {soulCoreTasks.map(renderCard)}
+                    {soulBonusTasks.length > 0 && (
+                      <>
+                        <div className="flex items-center gap-1 pt-1">
+                          <div className="flex-1 h-px bg-[#C9A84C]/15" />
+                          <span className="text-[8px] text-[#C9A84C]/50 font-bold">⭐ BONUS</span>
+                          <div className="flex-1 h-px bg-[#C9A84C]/15" />
+                        </div>
+                        {soulBonusTasks.map(renderCard)}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="bg-[#121212]/50 border border-white/5 rounded-2xl p-4 text-center">
               <p className="text-[11px] text-gray-500">
-                {completedCount === 9 
-                  ? (lang === 'ar' ? `🎉 مبارك! أكملت جميع المهام الأساسية التسع اليوم${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} نقاط إضافية ⭐` : ''}. سلسلتك محفوظة!` : `🎉 All 9 core tasks done today${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} bonus ⭐` : ''}! Streak saved.`) 
-                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ٩ مهام اليوم. ${n(9 - completedCount)} متبقية.` : `Completed ${n(completedCount)} of 9 tasks today. ${n(9 - completedCount)} remaining.`)}
+                {completedCount === CORE_TASK_IDS.length
+                  ? (lang === 'ar' ? `🎉 مبارك! أكملت جميع المهام الأساسية اليوم${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} نقاط إضافية ⭐` : ''}. سلسلتك محفوظة!` : `🎉 All ${CORE_TASK_IDS.length} core tasks done today${bonusCompletedCount > 0 ? ` + ${bonusCompletedCount} bonus ⭐` : ''}! Streak saved.`)
+                  : (lang === 'ar' ? `أكملت ${n(completedCount)} من ${n(CORE_TASK_IDS.length)} مهام اليوم. ${n(CORE_TASK_IDS.length - completedCount)} متبقية.` : `Completed ${n(completedCount)} of ${CORE_TASK_IDS.length} tasks today. ${CORE_TASK_IDS.length - completedCount} remaining.`)}
               </p>
             </div>
 
