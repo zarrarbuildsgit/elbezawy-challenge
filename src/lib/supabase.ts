@@ -14,7 +14,8 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 const ADMIN_EMAILS = [
   'muhummadzarrar09@gmail.com',
   'muhummadzarrar99@gmail.com',
-  'sinz.lumi@icloud.com'
+  'sinz.lumi@icloud.com',
+  'elbezawyabdalla@gmail.com'
 ];
 
 // ── COHORT START DATE ─────────────────────────────────────────────────────────
