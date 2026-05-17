@@ -600,7 +600,7 @@ class MockDatabase {
 
   getLeaderboard() {
     return this.users
-      .filter(u => u.is_active)
+      .filter(u => u.is_active && !u.is_admin)
       .map(u => {
         const streak = this.getStreak(u.id);
         return {
@@ -685,11 +685,39 @@ export const db = {
   loginWithWhop: async (whopUser: { id: string; name: string; email: string; picture?: string | null }) => {
     if (supabase) {
       try {
-        const { data: existing } = await supabase
+        // Look up by whop_id first, then fall back to email (covers admin bypass logins)
+        let { data: existing } = await supabase
           .from('users')
           .select('*')
           .eq('whop_id', whopUser.id)
           .maybeSingle();
+
+        if (!existing) {
+          const { data: byEmail } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', whopUser.email)
+            .maybeSingle();
+          existing = byEmail;
+          // Backfill whop_id if we found by email but whop_id was missing
+          if (existing && whopUser.id) {
+            await supabase.from('users').update({ whop_id: whopUser.id }).eq('id', existing.id);
+          }
+          // Clean up any other duplicate rows for this email (keep the oldest)
+          if (existing) {
+            const { data: dupes } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', whopUser.email)
+              .neq('id', existing.id);
+            if (dupes && dupes.length > 0) {
+              const dupeIds = dupes.map((d: any) => d.id);
+              await supabase.from('tasks').delete().in('user_id', dupeIds);
+              await supabase.from('streaks').delete().in('user_id', dupeIds);
+              await supabase.from('users').delete().in('id', dupeIds);
+            }
+          }
+        }
 
         if (existing) {
           // Sync name to Whop display name UNLESS user set a custom display name
@@ -733,7 +761,7 @@ export const db = {
       }
     }
 
-    // Mock fallback
+    // Mock fallback — match by whop_id OR email to prevent duplicates
     let user = mockDb.users.find((u: any) => u.whop_id === whopUser.id || u.email === whopUser.email);
     if (!user) {
       user = mockDb.registerUser(whopUser.name, whopUser.email, detectTimezone());
@@ -1101,7 +1129,8 @@ export const db = {
               total_completed
             )
           `)
-          .eq('is_active', true);
+          .eq('is_active', true)
+          .eq('is_admin', false);
 
         if (!error && data) {
           const formatted = data.map((u: any) => {
