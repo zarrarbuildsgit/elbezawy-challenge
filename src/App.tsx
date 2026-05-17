@@ -318,7 +318,7 @@ export default function App() {
   const handleSpiritualComplete = async (task: any) => {
     if (!currentUser || task.completed) return;
     try {
-      const updated = await db.completeTask(task.id, null, currentUser.id, task.day_number);
+      const updated = await db.completeTask(task.id, null, currentUser.id, task.day_number, false);
       if (updated && (updated as any).error) {
         console.error((updated as any).error);
       } else {
@@ -381,11 +381,15 @@ export default function App() {
           activeUploadTask.id, 
           selectedFile, 
           currentUser.id, 
-          activeUploadTask.day_number
+          activeUploadTask.day_number,
+          true
         );
 
         if (updated && (updated as any).error) {
-          setUploadError((updated as any).error);
+          const errMsg = lang === 'en' && (updated as any).error_en
+            ? (updated as any).error_en
+            : (updated as any).error;
+          setUploadError(errMsg);
           setValidationMessage('');
         } else {
           setActiveUploadTask(null);

@@ -292,17 +292,19 @@ export async function validatePhotoWithAI(
   const mimeType = file.type || 'image/jpeg';
   const dataUrl = `data:${mimeType};base64,${base64}`;
 
-  const prompt = `أنت نظام تحقق من صحة إثباتات مهام التحدي. مهمتك: قرر إذا كانت هذه الصورة دليلاً حقيقياً على إنجاز المهمة التالية.
-المهمة: ${taskTitle}
-قواعد الرفض الصارمة:
+  const prompt = `You are a challenge proof validator. Task: "${taskTitle}".
 
-ارفض إذا كانت الصورة لقطة شاشة (screenshot) لصورة أخرى
-ارفض إذا كانت الصورة واضح أنها من الإنترنت أو مخزنة مسبقاً
-ارفض إذا لا تتعلق الصورة بموضوع المهمة المذكورة بأي شكل
-ارفض إذا كانت الصورة فارغة، سوداء، أو لا تحتوي على محتوى واضح
+Be LENIENT. Approve unless it is OBVIOUSLY fake. Real people upload blurry, dark, or imperfect photos — that is fine.
 
-أجب فقط بـ JSON بهذا الشكل الدقيق بدون أي نص إضافي:
-{"approved": true/false, "reason": "سبب القرار بجملة واحدة"}`;
+ONLY reject if:
+- The image is completely black, blank, or corrupted (no visible content)
+- It is clearly a screenshot OF another photo or a stock image watermark is visible
+- The image has zero relation to the task (e.g. a selfie submitted for a workout task with no gym/exercise context at all)
+
+Give benefit of the doubt. A person at a gym, food on a plate, someone outdoors running — all valid even if low quality.
+
+Reply ONLY with valid JSON, no extra text:
+{"approved": true/false, "reason": "one sentence reason"}`;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -878,20 +880,28 @@ export const db = {
     return mockDb.getOrCreateTodayTasks(userId, timezone);
   },
 
-  completeTask: async (taskId: string, photoFile: File | string | null, userId: string, dayNumber: number) => {
+  completeTask: async (taskId: string, photoFile: File | string | null, userId: string, dayNumber: number, requiresPhotoOverride?: boolean) => {
     // First, determine if this task requires a photo
-    let requiresPhoto = true;
+    let requiresPhoto = requiresPhotoOverride ?? true;
     let taskTitle = 'المهمة';
     
-    if (supabase) {
-      try {
-        const { data: taskRow } = await supabase.from('tasks').select('*').eq('id', taskId).single();
-        if (taskRow) {
-          requiresPhoto = taskRow.requires_photo;
-          taskTitle = taskRow.title_ar;
+    if (requiresPhotoOverride === undefined) {
+      // Only hit the DB if caller didn't tell us
+      if (supabase) {
+        try {
+          const { data: taskRow } = await supabase.from('tasks').select('*').eq('id', taskId).single();
+          if (taskRow) {
+            requiresPhoto = taskRow.requires_photo;
+            taskTitle = taskRow.title_ar;
+          }
+        } catch (e) {
+          const taskRow = mockDb.tasks.find(t => t.id === taskId);
+          if (taskRow) {
+            requiresPhoto = taskRow.requires_photo;
+            taskTitle = taskRow.title_ar;
+          }
         }
-      } catch (e) {
-        // fallback to mock
+      } else {
         const taskRow = mockDb.tasks.find(t => t.id === taskId);
         if (taskRow) {
           requiresPhoto = taskRow.requires_photo;
@@ -899,10 +909,15 @@ export const db = {
         }
       }
     } else {
-      const taskRow = mockDb.tasks.find(t => t.id === taskId);
-      if (taskRow) {
-        requiresPhoto = taskRow.requires_photo;
-        taskTitle = taskRow.title_ar;
+      // Still get taskTitle from DB if possible
+      if (supabase) {
+        try {
+          const { data: taskRow } = await supabase.from('tasks').select('title_ar').eq('id', taskId).single();
+          if (taskRow) taskTitle = taskRow.title_ar;
+        } catch { /* silent */ }
+      } else {
+        const taskRow = mockDb.tasks.find(t => t.id === taskId);
+        if (taskRow) taskTitle = taskRow.title_ar;
       }
     }
 
@@ -942,7 +957,9 @@ export const db = {
         if (OPENROUTER_API_KEY) {
           const aiResult = await validatePhotoWithAI(photoFile, taskTitle);
           if (!aiResult.approved) {
-            return { error: `رُفضت الصورة بواسطة نظام التحقق: ${aiResult.reason}` };
+            const arMsg = `ظننت أنك تستطيع خداعنا؟ 😏 ارفع صورة حقيقية. (${aiResult.reason})`;
+            const enMsg = `You thought you could deceive us? 😏 Upload a valid photo. (${aiResult.reason})`;
+            return { error: arMsg, error_en: enMsg };
           }
         }
 
