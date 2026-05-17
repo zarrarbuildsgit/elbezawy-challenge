@@ -317,14 +317,27 @@ export default function App() {
   // Complete any task that doesn't require photo (spiritual + cold shower + mindful breathing)
   const handleSpiritualComplete = async (task: any) => {
     if (!currentUser || task.completed) return;
+
+    // Optimistic update — show checked immediately, don't wait for DB round-trip
+    setTodayTasks(prev => prev.map(t =>
+      t.id === task.id ? { ...t, completed: true, completed_at: new Date().toISOString() } : t
+    ));
+
     try {
       const updated = await db.completeTask(task.id, null, currentUser.id, task.day_number, false);
       if (updated && (updated as any).error) {
+        // DB rejected — revert the optimistic update
+        setTodayTasks(prev => prev.map(t =>
+          t.id === task.id ? { ...t, completed: false, completed_at: null } : t
+        ));
         console.error((updated as any).error);
-      } else {
-        setRefreshTrigger(p => p + 1);
       }
+      // No setRefreshTrigger here — optimistic state is already correct
     } catch (err) {
+      // Network/DB error — revert
+      setTodayTasks(prev => prev.map(t =>
+        t.id === task.id ? { ...t, completed: false, completed_at: null } : t
+      ));
       console.error(err);
     }
   };
