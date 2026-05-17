@@ -12,10 +12,16 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 
 // Hardcoded admin whitelist array
 const ADMIN_EMAILS = [
-  'admin@elbezawy.com',
-  'yunus@elbezawy.com',
-  'zq8th@elbezawy.com'
+  'muhummadzarrar09@gmail.com',
+  'muhummadzarrar99@gmail.com',
+  'sinz.lumi@icloud.com'
 ];
+
+// ── COHORT START DATE ─────────────────────────────────────────────────────────
+// Set this to the date the 30-day challenge officially begins.
+// Tasks are locked and day counter won't start until this date at 00:00 local time.
+// Format: 'YYYY-MM-DD'
+export const COHORT_START_DATE = '2025-06-01'; // ← CHANGE THIS TO YOUR LAUNCH DATE
 
 // Knowledge Base Predefined Content (ElBezawy Challenge Guide)
 const DEFAULT_KNOWLEDGE_BASE = [
@@ -455,9 +461,11 @@ class MockDatabase {
   }
 
   getDayNumber(user: any): number {
-    const start = new Date(user.created_at).getTime();
+    // Day number is based on COHORT start date, not user registration date
+    const cohortStart = new Date(COHORT_START_DATE + 'T00:00:00').getTime();
     const now = new Date().getTime();
-    const diffDays = Math.floor((now - start) / (24 * 3600 * 1000)) + 1;
+    if (now < cohortStart) return 1; // Challenge hasn't started yet
+    const diffDays = Math.floor((now - cohortStart) / (24 * 3600 * 1000)) + 1;
     return Math.min(30, Math.max(1, diffDays));
   }
 
@@ -699,33 +707,36 @@ export const db = {
             .eq('email', whopUser.email)
             .maybeSingle();
           existing = byEmail;
-          // Backfill whop_id if we found by email but whop_id was missing
+          // Backfill whop_id if found by email
           if (existing && whopUser.id) {
             await supabase.from('users').update({ whop_id: whopUser.id }).eq('id', existing.id);
-          }
-          // Clean up any other duplicate rows for this email (keep the oldest)
-          if (existing) {
-            const { data: dupes } = await supabase
-              .from('users')
-              .select('id')
-              .eq('email', whopUser.email)
-              .neq('id', existing.id);
-            if (dupes && dupes.length > 0) {
-              const dupeIds = dupes.map((d: any) => d.id);
-              await supabase.from('tasks').delete().in('user_id', dupeIds);
-              await supabase.from('streaks').delete().in('user_id', dupeIds);
-              await supabase.from('users').delete().in('id', dupeIds);
-            }
           }
         }
 
         if (existing) {
-          // Sync name to Whop display name UNLESS user set a custom display name
+          // Sync name + ALWAYS correct is_admin based on current email list
           const hasCustomName = !!localStorage.getItem(`elbezawi_display_name_${existing.id}`);
-          const updatePayload: any = { email: whopUser.email };
+          const isAdmin = ADMIN_EMAILS.includes(whopUser.email.toLowerCase());
+          const updatePayload: any = { email: whopUser.email, is_admin: isAdmin };
           if (!hasCustomName) updatePayload.name = whopUser.name;
           await supabase.from('users').update(updatePayload).eq('id', existing.id);
           if (!hasCustomName) existing.name = whopUser.name;
+          existing.is_admin = isAdmin;
+
+          // Always nuke duplicate rows for this email
+          const { data: dupes } = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', whopUser.email)
+            .neq('id', existing.id);
+          if (dupes && dupes.length > 0) {
+            const dupeIds = dupes.map((d: any) => d.id);
+            await supabase.from('tasks').delete().in('user_id', dupeIds);
+            await supabase.from('streaks').delete().in('user_id', dupeIds);
+            await supabase.from('users').delete().in('id', dupeIds);
+            console.log(`🧹 Nuked ${dupeIds.length} duplicate user rows for ${whopUser.email}`);
+          }
+
           mockDb.currentUser = existing;
           mockDb.save();
           return existing;
@@ -867,11 +878,9 @@ export const db = {
         const hasAllCore = (CORE_TASK_IDS as readonly string[]).every(id =>
           withTaskId.some((t: any) => t.task_id === id)
         );
-        // Reject if stale task IDs exist (e.g. 'reading' from old schema)
-        const ALL_VALID = [...CORE_TASK_IDS, ...BONUS_TASK_IDS] as string[];
-        const hasNoStale = withTaskId.every((t: any) => ALL_VALID.includes(t.task_id));
-        if (!error && hasAllCore && hasNoStale) return withTaskId;
-        // Stale — delete old tasks and recreate below
+        // Only delete stale if NONE of the core tasks exist (don't nuke on partial mismatch)
+        if (!error && hasAllCore) return withTaskId;
+        // Missing core tasks — delete old and recreate
         if (withTaskId.length > 0) {
           await supabase.from('tasks').delete().eq('user_id', userId).eq('day_number', dayNumber);
         }
@@ -1051,7 +1060,7 @@ export const db = {
           const coreDayTasks = allDayTasks?.filter((t: any) =>
               (CORE_TASK_IDS as readonly string[]).includes(t.task_id)
             ) || [];
-          if (coreDayTasks.length === 9 && coreDayTasks.every((t: any) => t.completed)) {
+          if (coreDayTasks.length === CORE_TASK_IDS.length && coreDayTasks.every((t: any) => t.completed)) {
             const { data: curStreak } = await supabase
               .from('streaks')
               .select('*')
@@ -1136,9 +1145,9 @@ export const db = {
           const formatted = data.map((u: any) => {
             const streakObj = u.streaks?.[0] || { current_streak: 0, longest_streak: 0, total_completed: 0 };
             
-            const start = new Date(u.created_at).getTime();
+            const cohortStart = new Date(COHORT_START_DATE + 'T00:00:00').getTime();
             const now = new Date().getTime();
-            const diffDays = Math.floor((now - start) / (24 * 3600 * 1000)) + 1;
+            const diffDays = now < cohortStart ? 0 : Math.floor((now - cohortStart) / (24 * 3600 * 1000)) + 1;
             const day_number = Math.min(30, Math.max(1, diffDays));
 
             return {
@@ -1165,24 +1174,36 @@ export const db = {
   adminGetUsers: async () => {
     if (supabase) {
       try {
-        const { data: users, error: userErr } = await supabase.from('users').select('*');
+        const { data: users, error: userErr } = await supabase
+          .from('users')
+          .select('*')
+          .eq('is_admin', false); // never show admins in admin panel
         const { data: streaks } = await supabase.from('streaks').select('*');
         const { data: tasks } = await supabase.from('tasks').select('*');
 
         if (!userErr && users) {
-          return users.map((u: any) => {
+          // Dedup by email — keep the one with most tasks (most active)
+          const seenEmails = new Map<string, any>();
+          for (const u of users) {
+            const uTasks = tasks?.filter((t: any) => t.user_id === u.id) || [];
+            const existing = seenEmails.get(u.email);
+            if (!existing || uTasks.length > (tasks?.filter((t: any) => t.user_id === existing.id) || []).length) {
+              seenEmails.set(u.email, u);
+            }
+          }
+          const dedupedUsers = Array.from(seenEmails.values());
+
+          const cohortStart = new Date(COHORT_START_DATE + 'T00:00:00').getTime();
+          const now = new Date().getTime();
+          const diffDays = now < cohortStart ? 0 : Math.floor((now - cohortStart) / (24 * 3600 * 1000)) + 1;
+          const day_number = Math.min(30, Math.max(1, diffDays));
+
+          return dedupedUsers.map((u: any) => {
             const streak = streaks?.find((s: any) => s.user_id === u.id) || { current_streak: 0, longest_streak: 0, total_completed: 0 };
             const uTasks = tasks?.filter((t: any) => t.user_id === u.id) || [];
-            
             const totalTasksCount = uTasks.length;
             const completedCount = uTasks.filter((t: any) => t.completed).length;
             const completionRate = totalTasksCount > 0 ? Math.round((completedCount / totalTasksCount) * 100) : 0;
-            
-            const start = new Date(u.created_at).getTime();
-            const now = new Date().getTime();
-            const diffDays = Math.floor((now - start) / (24 * 3600 * 1000)) + 1;
-            const day_number = Math.min(30, Math.max(1, diffDays));
-
             return {
               ...u,
               day_number,
