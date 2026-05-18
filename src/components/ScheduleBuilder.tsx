@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { getAdhanTimings, fetchAndCacheAdhan, type AdhanTimings } from '../lib/tasks'
 
 // ─── Types ───────────────────────────────────────────────────────────
 interface ScheduleBuilderProps {
@@ -81,9 +82,23 @@ const CATEGORIES: Record<CategoryKey, {
 
 const FIXED_BLOCKS: Record<FixedBlockKey, {
   startMin: number; endMin: number; labelEn: string; labelAr: string; emoji: string
-}> = {
+}> = FIXED_BLOCKS_DEFAULT as any // overridden at runtime via adhanBlocks state
+const timeToMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+
+const buildFixedBlocks = (adhan: AdhanTimings) => ({
+  fajr:    { startMin: timeToMin(adhan.Fajr),    endMin: timeToMin(adhan.Sunrise),              labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
+  adhkar:  { startMin: timeToMin(adhan.Sunrise),  endMin: timeToMin(adhan.Sunrise) + 30,         labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+  dhuhr:   { startMin: timeToMin(adhan.Dhuhr),    endMin: timeToMin(adhan.Dhuhr) + 30,           labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
+  asr:     { startMin: timeToMin(adhan.Asr),      endMin: timeToMin(adhan.Asr) + 30,             labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
+  maghrib: { startMin: timeToMin(adhan.Maghrib),  endMin: timeToMin(adhan.Maghrib) + 30,         labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
+  isha:    { startMin: timeToMin(adhan.Isha),      endMin: timeToMin(adhan.Isha) + 30,            labelEn: 'Isha Prayer',    labelAr: 'صلاة العشاء',    emoji: '🕌' },
+  quran:   { startMin: timeToMin(adhan.Isha) + 30, endMin: timeToMin(adhan.Isha) + 90,           labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
+})
+
+// Default static fallback (used before Adhan loads)
+const FIXED_BLOCKS_DEFAULT = {
   fajr:    { startMin: 300,  endMin: 360,  labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-  adhkar:  { startMin: 360,  endMin: 420,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+  adhkar:  { startMin: 360,  endMin: 390,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
   dhuhr:   { startMin: 780,  endMin: 810,  labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
   asr:     { startMin: 960,  endMin: 990,  labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
   maghrib: { startMin: 1110, endMin: 1140, labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
@@ -147,15 +162,15 @@ function getAllBlockKeys(): number[] {
   return keys
 }
 
-function isFixedBlock(minute: number): FixedBlockKey | null {
-  for (const [key, fb] of Object.entries(FIXED_BLOCKS)) {
+function isFixedBlock(minute: number, blocks = FIXED_BLOCKS_DEFAULT): FixedBlockKey | null {
+  for (const [key, fb] of Object.entries(blocks)) {
     if (minute >= fb.startMin && minute < fb.endMin) return key as FixedBlockKey
   }
   return null
 }
 
-function getFixedBlockSpan(key: FixedBlockKey): { start: number; count: number } {
-  const fb = FIXED_BLOCKS[key]
+function getFixedBlockSpan(key: FixedBlockKey, blocks = FIXED_BLOCKS_DEFAULT): { start: number; count: number } {
+  const fb = (blocks as any)[key]
   return { start: fb.startMin, count: (fb.endMin - fb.startMin) / BLOCK_MINUTES }
 }
 
@@ -187,6 +202,14 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
   const [schedule, setSchedule] = useState<Record<number, string>>({})
   const [customLabels, setCustomLabels] = useState<Record<number, string>>({})
   const [loaded, setLoaded] = useState(false)
+  const [adhanBlocks, setAdhanBlocks] = useState(() => buildFixedBlocks(getAdhanTimings()))
+
+  // Fetch live Adhan times on mount
+  useEffect(() => {
+    fetchAndCacheAdhan().then(timings => {
+      setAdhanBlocks(buildFixedBlocks(timings))
+    }).catch(() => {/* silent — keep default */})
+  }, [])
 
   const [sheetOpen, setSheetOpen] = useState(false)
   const [selectedBlocks, setSelectedBlocks] = useState<number[]>([])
@@ -326,9 +349,9 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     let i = 0
     while (i < allBlocks.length) {
       const minKey = allBlocks[i]
-      const fixed = isFixedBlock(minKey)
+      const fixed = isFixedBlock(minKey, adhanBlocks)
       if (fixed) {
-        const span = getFixedBlockSpan(fixed)
+        const span = getFixedBlockSpan(fixed, adhanBlocks)
         if (minKey === span.start) result.push({ startMin: span.start, count: span.count, value: fixed })
         i += span.count
         continue
@@ -338,7 +361,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
         let count = 1
         while (i + count < allBlocks.length) {
           const nextMin = allBlocks[i + count]
-          if (isFixedBlock(nextMin)) break
+          if (isFixedBlock(nextMin, adhanBlocks)) break
           if (schedule[nextMin] !== cat) break
           count++
         }
@@ -359,7 +382,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       const dur = block.count * BLOCK_MINUTES
       if (block.value) {
         scheduledMins += dur
-        if (block.value in FIXED_BLOCKS) fixedMins += dur
+        if (block.value in adhanBlocks) fixedMins += dur
         else categoryMins[block.value] = (categoryMins[block.value] || 0) + dur
       }
     }
@@ -370,7 +393,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     const progressPercent = editableMins > 0 ? Math.round((userScheduledMins / editableMins) * 100) : 0
 
     // Completion tracking
-    const userBlockMinutes = allBlocks.filter(m => schedule[m] && !isFixedBlock(m))
+    const userBlockMinutes = allBlocks.filter(m => schedule[m] && !isFixedBlock(m, adhanBlocks))
     const completedCount = userBlockMinutes.filter(m => completedBlocks[m]).length
     const totalUserBlocks = userBlockMinutes.length
     const completionPercent = totalUserBlocks > 0 ? Math.round((completedCount / totalUserBlocks) * 100) : 0
@@ -409,7 +432,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     if (dragRef.current.active) return
     const minute = getBlockMinuteFromMouseEvent(e)
     if (minute === null) return
-    const fixed = isFixedBlock(minute)
+    const fixed = isFixedBlock(minute, adhanBlocks)
     if (fixed) {
       setFixedTapFeedback(minute)
       setTimeout(() => setFixedTapFeedback(null), 600)
@@ -417,7 +440,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     }
     if (showCompletionMode && schedule[minute]) {
       const merged = findMergedBlock(minute)
-      if (merged && merged.value && !(merged.value in FIXED_BLOCKS)) {
+      if (merged && merged.value && !(merged.value in adhanBlocks)) {
         setCompletedBlocks(prev => {
           const next = { ...prev }
           const isCompleted = next[merged.startMin]
@@ -444,7 +467,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const minute = getBlockMinuteFromEvent(e)
     if (minute === null) return
-    const fixed = isFixedBlock(minute)
+    const fixed = isFixedBlock(minute, adhanBlocks)
     if (fixed) {
       setFixedTapFeedback(minute)
       setTimeout(() => setFixedTapFeedback(null), 600)
@@ -453,7 +476,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     // Completion mode: toggle completion instead of opening clear dialog
     if (showCompletionMode && schedule[minute]) {
       const merged = findMergedBlock(minute)
-      if (merged && merged.value && !(merged.value in FIXED_BLOCKS)) {
+      if (merged && merged.value && !(merged.value in adhanBlocks)) {
         setCompletedBlocks(prev => {
           const next = { ...prev }
           const isCompleted = next[merged.startMin]
@@ -497,10 +520,10 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     }
     if (!dragRef.current.active) return
     const minute = getBlockMinuteFromEvent(e)
-    if (minute === null || isFixedBlock(minute)) return
+    if (minute === null || isFixedBlock(minute, adhanBlocks)) return
     const minVal = Math.min(dragRef.current.startMin, minute)
     const maxVal = Math.max(dragRef.current.startMin, minute)
-    const sel: number[] = allBlocks.filter(m => m >= minVal && m <= maxVal && !isFixedBlock(m))
+    const sel: number[] = allBlocks.filter(m => m >= minVal && m <= maxVal && !isFixedBlock(m, adhanBlocks))
     dragRef.current.currentMins = new Set(sel)
     setSelectedBlocks(sel)
     selectedBlocksRef.current = sel
@@ -583,11 +606,11 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       // Only keep blocks not in template range and not overwritten
       for (const [k, v] of Object.entries(prev)) {
         const m = Number(k)
-        if (!(m in tpl.schedule) && !isFixedBlock(m)) next[m] = v
+        if (!(m in tpl.schedule) && !isFixedBlock(m, adhanBlocks)) next[m] = v
       }
       // Apply template
       for (const [k, v] of Object.entries(tpl.schedule)) {
-        if (!isFixedBlock(Number(k))) next[Number(k)] = v
+        if (!isFixedBlock(Number(k), adhanBlocks)) next[Number(k)] = v
       }
       return next
     })
@@ -601,7 +624,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
         const targetKey = `elbezawi_schedule_${userId}_${key}`
         const userSchedule: Record<number, string> = {}
         for (const [k, v] of Object.entries(tpl.schedule)) {
-          if (!isFixedBlock(Number(k))) userSchedule[Number(k)] = v
+          if (!isFixedBlock(Number(k), adhanBlocks)) userSchedule[Number(k)] = v
         }
         localStorage.setItem(targetKey, JSON.stringify({ schedule: userSchedule, customLabels: {}, completed: {} }))
       }
@@ -620,11 +643,11 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     const userCustomLabels: Record<number, string> = {}
     for (const [k, v] of Object.entries(schedule)) {
       const m = Number(k)
-      if (!isFixedBlock(m)) userSchedule[m] = v
+      if (!isFixedBlock(m, adhanBlocks)) userSchedule[m] = v
     }
     for (const [k, v] of Object.entries(customLabels)) {
       const m = Number(k)
-      if (!isFixedBlock(m) && schedule[m]) userCustomLabels[k] = v
+      if (!isFixedBlock(m, adhanBlocks) && schedule[m]) userCustomLabels[k] = v
     }
     // Merge with existing target date data
     const existing = localStorage.getItem(targetKey)
@@ -688,7 +711,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     for (const block of renderBlocks) {
       const y = headerH + ((block.startMin - START_HOUR * 60) / BLOCK_MINUTES) * blockH
       const h = block.count * blockH - 1
-      const isFixed = block.value !== null && block.value in FIXED_BLOCKS
+      const isFixed = block.value !== null && block.value in adhanBlocks
       const isCat = block.value !== null && !isFixed
       const x = isRtl ? 20 : labelW + 10
       const w = width - labelW - 30
@@ -703,7 +726,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       }
 
       if (isFixed) {
-        const fb = FIXED_BLOCKS[block.value as FixedBlockKey]
+        const fb = adhanBlocks[block.value as FixedBlockKey]
         ctx.fillStyle = 'rgba(201,168,76,0.12)'
         ctx.fillRect(x, y, w, h)
         ctx.strokeStyle = 'rgba(201,168,76,0.4)'
@@ -952,7 +975,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
                         pct = Math.min(100, Math.round(Object.keys(data.schedule).length * BLOCK_MINUTES / 840 * 100))
                         // Calculate completion percentage
                         const completed = data.completed || {}
-                        const userBlocks = Object.keys(data.schedule).filter(k => !isFixedBlock(Number(k)))
+                        const userBlocks = Object.keys(data.schedule).filter(k => !isFixedBlock(Number(k), adhanBlocks))
                         const completedCount = userBlocks.filter(k => completed[k]).length
                         completionPct = userBlocks.length > 0 ? Math.round((completedCount / userBlocks.length) * 100) : 0
                       }
@@ -1200,8 +1223,8 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
           if (!block.value) continue
           const startStr = minuteToTimeStr(block.startMin, lang)
           const endStr = minuteToTimeStr(block.startMin + block.count * BLOCK_MINUTES, lang)
-          const isFixed = block.value in FIXED_BLOCKS
-          const fb = isFixed ? FIXED_BLOCKS[block.value as FixedBlockKey] : null
+          const isFixed = block.value in adhanBlocks
+          const fb = isFixed ? adhanBlocks[block.value as FixedBlockKey] : null
           const cat = !isFixed && block.value ? CATEGORIES[block.value as CategoryKey] : null
           const name = fb ? (isRtl ? fb.labelAr : fb.labelEn) : cat ? (block.value === 'custom' && block.customLabel ? block.customLabel : (isRtl ? cat.labelAr : cat.labelEn)) : ''
           const emoji = fb?.emoji || cat?.emoji || ''
@@ -1370,12 +1393,12 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
             {renderBlocks.map(block => {
               const topPx = ((block.startMin - START_HOUR * 60) / BLOCK_MINUTES) * BLOCK_HEIGHT_PX
               const heightPx = block.count * BLOCK_HEIGHT_PX - 2
-              const isFixed = block.value !== null && block.value in FIXED_BLOCKS
+              const isFixed = block.value !== null && block.value in adhanBlocks
               const isCategory = block.value !== null && !isFixed
               const isFree = block.value === null
               const isSelected = selectedBlocks.some(s => s >= block.startMin && s < block.startMin + block.count * BLOCK_MINUTES)
               const catData = isCategory && block.value ? CATEGORIES[block.value as CategoryKey] : null
-              const fixedData = isFixed ? FIXED_BLOCKS[block.value as FixedBlockKey] : null
+              const fixedData = isFixed ? adhanBlocks[block.value as FixedBlockKey] : null
               const durationMins = block.count * BLOCK_MINUTES
               const isShaking = fixedTapFeedback !== null && isFixed && block.startMin === fixedTapFeedback
               const isCompleted = isCategory && completedBlocks[block.startMin]
@@ -1494,12 +1517,12 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
             <div className="rounded-2xl p-5 mx-4 w-full max-w-xs animate-fade-in" style={{ background: 'rgba(26,26,26,0.85)', border: '1px solid rgba(255,255,255,0.1)', boxShadow: '0 8px 32px rgba(0,0,0,0.4)', backdropFilter: 'blur(16px)' }}>
               <div className="flex items-center justify-center gap-2 mb-3"><span className="text-xl">{catData?.emoji || '🔒'}</span></div>
               <p className="text-sm font-semibold text-center mb-1" style={{ color: '#ddd' }}>
-                {catKey && !(catKey in FIXED_BLOCKS) ? `${catData?.emoji || ''} ${catName} (${timeRange})` : catName}
+                {catKey && !(catKey in adhanBlocks) ? `${catData?.emoji || ''} ${catName} (${timeRange})` : catName}
               </p>
               <p className="text-xs text-center mb-3" style={{ color: '#888' }}>{labels.clearBlockConfirm}</p>
               <div className="flex gap-2">
                 <button onClick={() => setClearTarget(null)} className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all active:scale-95" style={{ background: 'rgba(255,255,255,0.06)', color: '#999' }}>{labels.cancel}</button>
-                {catKey && !(catKey in FIXED_BLOCKS) && (
+                {catKey && !(catKey in adhanBlocks) && (
                   <button onClick={() => {
                     if (merged) {
                       const mins: number[] = []
@@ -1511,7 +1534,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
                     }
                   }} className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all active:scale-95" style={{ background: 'rgba(201,168,76,0.12)', color: GOLD, border: `1px solid ${GOLD}33` }}>🔄 {labels.reassign}</button>
                 )}
-                {catKey && !(catKey in FIXED_BLOCKS) && (
+                {catKey && !(catKey in adhanBlocks) && (
                   <button onClick={() => clearBlock(clearTarget)} className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all active:scale-95" style={{ background: 'rgba(239,68,68,0.15)', color: '#EF4444', border: '1px solid rgba(239,68,68,0.2)' }}>🗑️ {labels.clear}</button>
                 )}
               </div>
