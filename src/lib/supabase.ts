@@ -14,8 +14,7 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 const ADMIN_EMAILS = [
   'muhummadzarrar09@gmail.com',
   'muhummadzarrar99@gmail.com',
-  'sinz.lumi@icloud.com',
-  'elbezawyabdalla@gmail.com'
+  'sinz.lumi@icloud.com'
 ];
 
 // ── COHORT START DATE ─────────────────────────────────────────────────────────
@@ -1139,11 +1138,12 @@ export const db = {
               total_completed
             )
           `)
-          .eq('is_active', true)
-          .eq('is_admin', false);
+          .eq('is_active', true);
 
         if (!error && data) {
-          const formatted = data.map((u: any) => {
+          const formatted = data
+            .filter((u: any) => !ADMIN_EMAILS.includes(u.email?.toLowerCase()))
+            .map((u: any) => {
             const streakObj = u.streaks?.[0] || { current_streak: 0, longest_streak: 0, total_completed: 0 };
             
             const cohortStart = new Date(COHORT_START_DATE + 'T00:00:00').getTime();
@@ -1177,15 +1177,15 @@ export const db = {
       try {
         const { data: users, error: userErr } = await supabase
           .from('users')
-          .select('*')
-          .eq('is_admin', false); // never show admins in admin panel
+          .select('*');
         const { data: streaks } = await supabase.from('streaks').select('*');
         const { data: tasks } = await supabase.from('tasks').select('*');
 
         if (!userErr && users) {
-          // Dedup by email — keep the one with most tasks (most active)
+          // Dedup by email, exclude admins by email (not DB column — DB may be stale)
           const seenEmails = new Map<string, any>();
           for (const u of users) {
+            if (ADMIN_EMAILS.includes(u.email?.toLowerCase())) continue; // skip admins
             const uTasks = tasks?.filter((t: any) => t.user_id === u.id) || [];
             const existing = seenEmails.get(u.email);
             if (!existing || uTasks.length > (tasks?.filter((t: any) => t.user_id === existing.id) || []).length) {

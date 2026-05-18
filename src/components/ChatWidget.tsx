@@ -83,10 +83,13 @@ export default function ChatWidget() {
     setIsLoading(true);
 
     try {
-      const apiMessages = trimmedMessages.map(m => ({
-        role: m.role,
-        content: m.content
-      }));
+      const apiMessages = trimmedMessages
+      .map(m => ({ role: m.role, content: m.content }))
+      // API requires conversation to start with user, not assistant greeting
+      .filter((_, i, arr) => {
+        const firstUserIdx = arr.findIndex(m => m.role === 'user');
+        return firstUserIdx === -1 || i >= firstUserIdx;
+      });
 
       const reply = await callOpenRouter(apiMessages, knowledgeContext);
 
