@@ -14,7 +14,8 @@ export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
 const ADMIN_EMAILS = [
   'muhummadzarrar09@gmail.com',
   'muhummadzarrar99@gmail.com',
-  'sinz.lumi@icloud.com'
+  'sinz.lumi@icloud.com',
+  'elbezawyabdalla@gmail.com'
 ];
 
 // ── COHORT START DATE ─────────────────────────────────────────────────────────
@@ -788,21 +789,24 @@ export const db = {
   getCurrentUser: async () => {
     if (supabase) {
       try {
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-          return mockDb.getCurrentUser();
-        }
-        
+        // App uses Whop OAuth not Supabase Auth — look up by stored user id
+        const stored = mockDb.getCurrentUser();
+        if (!stored?.id) return null;
+
         const { data, error } = await supabase
           .from('users')
           .select('*')
-          .eq('id', user.id)
-          .single();
-        
-        if (error || !data) {
-          return mockDb.getCurrentUser();
+          .eq('id', stored.id)
+          .maybeSingle();
+
+        if (!error && data) {
+          // Keep local in sync
+          mockDb.currentUser = data;
+          mockDb.save();
+          return data;
         }
-        return data;
+        // Supabase has no row yet — return local until login creates one
+        return stored;
       } catch (e) {
         return mockDb.getCurrentUser();
       }
