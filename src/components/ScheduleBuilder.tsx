@@ -60,7 +60,7 @@ const TEMPLATES: Record<TemplateKey, {
 }
 
 // ─── Constants ───────────────────────────────────────────────────────
-const START_HOUR = 5
+const START_HOUR = 3
 const END_HOUR = 23
 const BLOCK_MINUTES = 15
 const BLOCK_HEIGHT_PX = 36
@@ -87,7 +87,7 @@ const timeToMin = (t: string) => { const [h, m] = t.split(':').map(Number); retu
 
 const buildFixedBlocks = (adhan: AdhanTimings) => ({
   fajr:    { startMin: timeToMin(adhan.Fajr),    endMin: timeToMin(adhan.Sunrise),              labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-  adhkar:  { startMin: timeToMin(adhan.Sunrise),  endMin: timeToMin(adhan.Sunrise) + 30,         labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+  adhkar:  { startMin: timeToMin(adhan.Fajr),     endMin: timeToMin(adhan.Sunrise) + 30,        labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
   dhuhr:   { startMin: timeToMin(adhan.Dhuhr),    endMin: timeToMin(adhan.Dhuhr) + 30,           labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
   asr:     { startMin: timeToMin(adhan.Asr),      endMin: timeToMin(adhan.Asr) + 30,             labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
   maghrib: { startMin: timeToMin(adhan.Maghrib),  endMin: timeToMin(adhan.Maghrib) + 30,         labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
@@ -373,7 +373,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       }
     }
     return result
-  }, [allBlocks, schedule, customLabels])
+  }, [allBlocks, schedule, customLabels, adhanBlocks])
 
   const stats = useMemo(() => {
     let scheduledMins = 0, fixedMins = 0
@@ -399,7 +399,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     const completionPercent = totalUserBlocks > 0 ? Math.round((completedCount / totalUserBlocks) * 100) : 0
 
     return { scheduledMins, fixedMins, categoryMins, totalAvailable, editableMins, userScheduledMins, freeMins, progressPercent, completedCount, totalUserBlocks, completionPercent }
-  }, [renderBlocks, allBlocks, schedule, completedBlocks])
+  }, [renderBlocks, allBlocks, schedule, completedBlocks, adhanBlocks])
 
   const hasUserBlocks = useMemo(() => {
     return Object.keys(schedule).length > 0
@@ -462,7 +462,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     setSelectedBlocks([minute])
     selectedBlocksRef.current = [minute]
     setSheetOpen(true)
-  }, [schedule, showCompletionMode, findMergedBlock, getBlockMinuteFromMouseEvent])
+  }, [schedule, showCompletionMode, findMergedBlock, getBlockMinuteFromMouseEvent, adhanBlocks])
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     const minute = getBlockMinuteFromEvent(e)
@@ -508,7 +508,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     setSelectedBlocks(newSel)
     selectedBlocksRef.current = newSel
     setSheetOpen(false)
-  }, [getBlockMinuteFromEvent, schedule, showCompletionMode, findMergedBlock])
+  }, [getBlockMinuteFromEvent, schedule, showCompletionMode, findMergedBlock, adhanBlocks])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     // Touch scroll detection: if finger moved > 8px vertically, mark as scroll
@@ -527,7 +527,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     dragRef.current.currentMins = new Set(sel)
     setSelectedBlocks(sel)
     selectedBlocksRef.current = sel
-  }, [getBlockMinuteFromEvent, allBlocks])
+  }, [getBlockMinuteFromEvent, allBlocks, adhanBlocks])
 
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     // Touch tap: only open sheet if user didn't scroll
@@ -1321,7 +1321,8 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
 
       {/* ── Grid area ── */}
       <div className="relative px-2">
-        <div ref={gridRef} className="relative overflow-y-auto overflow-x-hidden" style={{ maxHeight: '68vh', touchAction: 'pan-y', scrollBehavior: 'smooth' }}
+        <div ref={gridRef} className="relative overflow-y-auto overflow-x-hidden" style={{ maxHeight: '75vh', touchAction: 'pan-y', scrollBehavior: 'smooth' }}
+          onWheel={e => { e.stopPropagation(); if (gridRef.current) { gridRef.current.scrollTop += e.deltaY; } }}
           onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerLeave={handlePointerUp}
           onClick={handleGridClick}>
           <div className="relative" style={{ height: allBlocks.length * BLOCK_HEIGHT_PX }}>

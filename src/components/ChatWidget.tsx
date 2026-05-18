@@ -218,12 +218,12 @@ export default function ChatWidget() {
           </div>
 
           {/* Quick Reply Suggestions */}
-          <div className="px-4 py-2 bg-[#1b1b1b] border-t border-[#C9A84C]/5 overflow-x-auto whitespace-nowrap flex gap-2">
+          <div className="px-3 py-2 bg-[#1b1b1b] border-t border-[#C9A84C]/5 flex flex-wrap gap-1.5">
             {quickReplyKeys.map((key) => (
               <button
                 key={key}
                 onClick={() => handleSendMessage(t(key))}
-                className="bg-[#222] hover:bg-[#C9A84C]/10 text-xs text-[#C9A84C] px-3 py-1.5 rounded-full border border-[#C9A84C]/20 transition shrink-0"
+                className="bg-[#222] hover:bg-[#C9A84C]/10 text-[11px] text-[#C9A84C] px-2.5 py-1 rounded-full border border-[#C9A84C]/20 transition"
               >
                 {t(key)}
               </button>
