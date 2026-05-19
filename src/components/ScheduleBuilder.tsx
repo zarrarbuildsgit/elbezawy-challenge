@@ -80,31 +80,40 @@ const CATEGORIES: Record<CategoryKey, {
   custom:       { emoji: '➕', labelEn: 'Custom',          labelAr: 'مخصص',           color: '#A0A0A0', bg: 'rgba(160,160,160,0.12)', bgStrong: 'rgba(160,160,160,0.25)' },
 }
 
-const FIXED_BLOCKS: Record<FixedBlockKey, {
-  startMin: number; endMin: number; labelEn: string; labelAr: string; emoji: string
-}> = FIXED_BLOCKS_DEFAULT as any // overridden at runtime via adhanBlocks state
 const timeToMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
-
-const buildFixedBlocks = (adhan: AdhanTimings) => ({
-  fajr:    { startMin: timeToMin(adhan.Fajr),    endMin: timeToMin(adhan.Sunrise),              labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-  adhkar:  { startMin: timeToMin(adhan.Fajr),     endMin: timeToMin(adhan.Sunrise) + 30,        labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
-  dhuhr:   { startMin: timeToMin(adhan.Dhuhr),    endMin: timeToMin(adhan.Dhuhr) + 30,           labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
-  asr:     { startMin: timeToMin(adhan.Asr),      endMin: timeToMin(adhan.Asr) + 30,             labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
-  maghrib: { startMin: timeToMin(adhan.Maghrib),  endMin: timeToMin(adhan.Maghrib) + 30,         labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
-  isha:    { startMin: timeToMin(adhan.Isha),      endMin: timeToMin(adhan.Isha) + 30,            labelEn: 'Isha Prayer',    labelAr: 'صلاة العشاء',    emoji: '🕌' },
-  quran:   { startMin: timeToMin(adhan.Isha) + 30, endMin: timeToMin(adhan.Isha) + 90,           labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
-})
 
 // Default static fallback (used before Adhan loads)
 const FIXED_BLOCKS_DEFAULT = {
-  fajr:    { startMin: 300,  endMin: 360,  labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-  adhkar:  { startMin: 360,  endMin: 390,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+  fajr:    { startMin: 300,  endMin: 375,  labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
+  adhkar:  { startMin: 375,  endMin: 405,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
   dhuhr:   { startMin: 780,  endMin: 810,  labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
   asr:     { startMin: 960,  endMin: 990,  labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
   maghrib: { startMin: 1110, endMin: 1140, labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
   isha:    { startMin: 1200, endMin: 1230, labelEn: 'Isha Prayer',    labelAr: 'صلاة العشاء',    emoji: '🕌' },
   quran:   { startMin: 1230, endMin: 1290, labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
 }
+
+const buildFixedBlocks = (adhan: AdhanTimings) => {
+  const fajrMin    = timeToMin(adhan.Fajr)
+  const sunriseMin = timeToMin(adhan.Sunrise)
+  const dhuhrMin   = timeToMin(adhan.Dhuhr)
+  const asrMin     = timeToMin(adhan.Asr)
+  const maghribMin = timeToMin(adhan.Maghrib)
+  const ishaMin    = timeToMin(adhan.Isha)
+  return {
+    fajr:    { startMin: fajrMin,          endMin: sunriseMin,       labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
+    adhkar:  { startMin: sunriseMin,       endMin: sunriseMin + 30,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+    dhuhr:   { startMin: dhuhrMin,         endMin: dhuhrMin + 30,    labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
+    asr:     { startMin: asrMin,           endMin: asrMin + 30,      labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
+    maghrib: { startMin: maghribMin,       endMin: maghribMin + 30,  labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
+    isha:    { startMin: ishaMin,          endMin: ishaMin + 30,     labelEn: 'Isha Prayer',    labelAr: 'صلاة العشاء',    emoji: '🕌' },
+    quran:   { startMin: ishaMin + 30,     endMin: ishaMin + 90,     labelEn: 'Quran',          labelAr: 'القرآن الكريم',  emoji: '📖' },
+  }
+}
+
+const FIXED_BLOCKS: Record<FixedBlockKey, {
+  startMin: number; endMin: number; labelEn: string; labelAr: string; emoji: string
+}> = FIXED_BLOCKS_DEFAULT
 
 const GOLD = '#C9A84C'
 const GOLD_BG = 'rgba(201,168,76,0.06)'
