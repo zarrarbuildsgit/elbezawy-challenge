@@ -15,18 +15,19 @@ interface Prayer {
   emoji: string
   timeKey: keyof AdhanTimings
   endKey?: keyof AdhanTimings
+  startOffsetMin?: number
   endOffsetMin?: number
   isBonus?: boolean
 }
 
 const PRAYERS: Prayer[] = [
-  { id: 'fajr',    nameEn: 'Fajr',          nameAr: 'الفجر',          emoji: '🌙', timeKey: 'Fajr',     endKey: 'Sunrise' },
-  { id: 'adhkar',  nameEn: 'Morning Adhkar', nameAr: 'أذكار الصباح',  emoji: '🤲', timeKey: 'Fajr',     endKey: 'Sunrise', endOffsetMin: 30 },
-  { id: 'dhuhr',   nameEn: 'Dhuhr',          nameAr: 'الظهر',          emoji: '☀️', timeKey: 'Dhuhr',    endOffsetMin: 30 },
-  { id: 'asr',     nameEn: 'Asr',            nameAr: 'العصر',          emoji: '🌤️', timeKey: 'Asr',      endKey: 'Maghrib' },
-  { id: 'maghrib', nameEn: 'Maghrib',         nameAr: 'المغرب',         emoji: '🌅', timeKey: 'Maghrib',  endOffsetMin: 20 },
-  { id: 'isha',    nameEn: 'Isha',            nameAr: 'العشاء',         emoji: '🌃', timeKey: 'Isha',     endOffsetMin: 30 },
-  { id: 'quran',   nameEn: 'Quran',           nameAr: 'القرآن الكريم',  emoji: '📖', timeKey: 'Isha',     endOffsetMin: 60 },
+  { id: 'fajr',    nameEn: 'Fajr',            nameAr: 'الفجر',          emoji: '🌙', timeKey: 'Fajr',      endKey: 'Sunrise', endOffsetMin: -30 },
+  { id: 'adhkar',  nameEn: 'Morning Adhkar',   nameAr: 'أذكار الصباح',  emoji: '🤲', timeKey: 'Sunrise',   startOffsetMin: -30, endOffsetMin: 30 },
+  { id: 'dhuhr',   nameEn: 'Dhuhr',            nameAr: 'الظهر',          emoji: '☀️', timeKey: 'Dhuhr',     endOffsetMin: 30 },
+  { id: 'asr',     nameEn: 'Asr',              nameAr: 'العصر',          emoji: '🌤️', timeKey: 'Asr',       endKey: 'Maghrib' },
+  { id: 'maghrib', nameEn: 'Maghrib',           nameAr: 'المغرب',         emoji: '🌅', timeKey: 'Maghrib',   endOffsetMin: 20 },
+  { id: 'isha',    nameEn: 'Isha',              nameAr: 'العشاء',         emoji: '🌃', timeKey: 'Isha',      endOffsetMin: 30 },
+  { id: 'quran',   nameEn: 'Quran',             nameAr: 'القرآن الكريم',  emoji: '📖', timeKey: 'Isha',      startOffsetMin: 30, endOffsetMin: 90 },
   { id: 'qiyam',   nameEn: 'Qiyam al-Layl ⭐', nameAr: 'قيام الليل ⭐', emoji: '🌙', timeKey: 'Lastthird', endKey: 'Fajr', isBonus: true },
 ]
 
@@ -42,14 +43,14 @@ function toTimeStr(totalMin: number): string {
 }
 
 function getPrayerWindow(prayer: Prayer, t: AdhanTimings): { start: string; end: string } {
-  const startMin = toMin(t[prayer.timeKey] || '00:00')
+  const startMin = toMin(t[prayer.timeKey] || '00:00') + (prayer.startOffsetMin || 0)
   let endMin: number
   if (prayer.endKey) {
     endMin = toMin(t[prayer.endKey] || '23:59') + (prayer.endOffsetMin || 0)
   } else {
-    endMin = startMin + (prayer.endOffsetMin || 30)
+    endMin = toMin(t[prayer.timeKey] || '00:00') + (prayer.startOffsetMin || 0) + (prayer.endOffsetMin || 30)
   }
-  return { start: toTimeStr(startMin), end: toTimeStr(Math.min(endMin, 23 * 60 + 59)) }
+  return { start: toTimeStr(Math.max(0, startMin)), end: toTimeStr(Math.min(endMin, 23 * 60 + 59)) }
 }
 
 type PrayerStatus = 'done' | 'active' | 'upcoming' | 'bonus'
