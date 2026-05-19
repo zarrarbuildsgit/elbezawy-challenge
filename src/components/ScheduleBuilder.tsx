@@ -102,7 +102,7 @@ const buildFixedBlocks = (adhan: AdhanTimings) => {
   const ishaMin    = timeToMin(adhan.Isha)
   return {
     fajr:    { startMin: fajrMin,          endMin: sunriseMin,       labelEn: 'Fajr Prayer',    labelAr: 'صلاة الفجر',     emoji: '🕌' },
-    adhkar:  { startMin: sunriseMin,       endMin: sunriseMin + 30,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
+    adhkar:  { startMin: sunriseMin - 30,      endMin: sunriseMin + 30,  labelEn: 'Morning Adhkar', labelAr: 'أذكار الصباح',   emoji: '🤲' },
     dhuhr:   { startMin: dhuhrMin,         endMin: dhuhrMin + 30,    labelEn: 'Dhuhr Prayer',   labelAr: 'صلاة الظهر',     emoji: '🕌' },
     asr:     { startMin: asrMin,           endMin: asrMin + 30,      labelEn: 'Asr Prayer',     labelAr: 'صلاة العصر',     emoji: '🕌' },
     maghrib: { startMin: maghribMin,       endMin: maghribMin + 30,  labelEn: 'Maghrib Prayer', labelAr: 'صلاة المغرب',    emoji: '🕌' },
@@ -1473,7 +1473,9 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[11px] font-semibold truncate" style={{ color: GOLD }}>{isRtl ? fixedData.labelAr : fixedData.labelEn}</div>
-                        <div className="text-[8px] opacity-50" style={{ color: GOLD }}>{minuteToTimeStr(fixedData.startMin, lang)} – {minuteToTimeStr(fixedData.endMin, lang)}</div>
+                        <div className="text-[8px] opacity-50" style={{ color: GOLD }}>
+                          {minuteToTimeStr(Math.floor(fixedData.startMin / BLOCK_MINUTES) * BLOCK_MINUTES, lang)} – {minuteToTimeStr(Math.ceil(fixedData.endMin / BLOCK_MINUTES) * BLOCK_MINUTES, lang)}
+                        </div>
                       </div>
                       {durationMins >= 30 && <span className="text-[8px] opacity-50" style={{ color: GOLD, paddingInlineStart: '4px' }}>{formatDuration(durationMins, lang)}</span>}
                     </div>
