@@ -174,14 +174,19 @@ const ALL_BLOCK_KEYS = getAllBlockKeys() // stable module-level const
 
 function isFixedBlock(minute: number, blocks = FIXED_BLOCKS_DEFAULT): FixedBlockKey | null {
   for (const [key, fb] of Object.entries(blocks)) {
-    if (minute >= fb.startMin && minute < fb.endMin) return key as FixedBlockKey
+    const snappedStart = Math.floor(fb.startMin / BLOCK_MINUTES) * BLOCK_MINUTES
+    const snappedEnd   = Math.ceil(fb.endMin / BLOCK_MINUTES) * BLOCK_MINUTES
+    if (minute >= snappedStart && minute < snappedEnd) return key as FixedBlockKey
   }
   return null
 }
 
 function getFixedBlockSpan(key: FixedBlockKey, blocks = FIXED_BLOCKS_DEFAULT): { start: number; count: number } {
   const fb = (blocks as any)[key]
-  return { start: fb.startMin, count: (fb.endMin - fb.startMin) / BLOCK_MINUTES }
+  // Snap start to nearest 15-min slot, ceil end to cover full window
+  const snappedStart = Math.floor(fb.startMin / BLOCK_MINUTES) * BLOCK_MINUTES
+  const snappedEnd   = Math.ceil(fb.endMin / BLOCK_MINUTES) * BLOCK_MINUTES
+  return { start: snappedStart, count: Math.max(1, (snappedEnd - snappedStart) / BLOCK_MINUTES) }
 }
 
 function getDateKey(date: Date): string {
