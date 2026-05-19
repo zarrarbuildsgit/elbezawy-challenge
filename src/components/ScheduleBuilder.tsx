@@ -170,6 +170,7 @@ function getAllBlockKeys(): number[] {
   for (let m = START_HOUR * 60; m <= END_HOUR * 60 + 45; m += BLOCK_MINUTES) keys.push(m)
   return keys
 }
+const ALL_BLOCK_KEYS = getAllBlockKeys() // stable module-level const
 
 function isFixedBlock(minute: number, blocks = FIXED_BLOCKS_DEFAULT): FixedBlockKey | null {
   for (const [key, fb] of Object.entries(blocks)) {
@@ -212,11 +213,13 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
   const [customLabels, setCustomLabels] = useState<Record<number, string>>({})
   const [loaded, setLoaded] = useState(false)
   const [adhanBlocks, setAdhanBlocks] = useState(() => buildFixedBlocks(getAdhanTimings()))
+  const [adhanVersion, setAdhanVersion] = useState(0)
 
   // Fetch live Adhan times on mount
   useEffect(() => {
     fetchAndCacheAdhan().then(timings => {
       setAdhanBlocks(buildFixedBlocks(timings))
+      setAdhanVersion(v => v + 1) // force all memos to recompute
     }).catch(() => {/* silent — keep default */})
   }, [])
 
@@ -349,7 +352,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     return () => window.removeEventListener('keydown', onKey)
   }, [undo, undoStack])
 
-  const allBlocks = useRef(getAllBlockKeys()).current
+  const allBlocks = ALL_BLOCK_KEYS
 
   type MergedBlock = { startMin: number; count: number; value: BlockValue; customLabel?: string }
 
@@ -382,7 +385,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
       }
     }
     return result
-  }, [allBlocks, schedule, customLabels, adhanBlocks])
+  }, [allBlocks, schedule, customLabels, adhanBlocks, adhanVersion])
 
   const stats = useMemo(() => {
     let scheduledMins = 0, fixedMins = 0
@@ -408,7 +411,7 @@ export default function ScheduleBuilder({ userId, lang }: ScheduleBuilderProps) 
     const completionPercent = totalUserBlocks > 0 ? Math.round((completedCount / totalUserBlocks) * 100) : 0
 
     return { scheduledMins, fixedMins, categoryMins, totalAvailable, editableMins, userScheduledMins, freeMins, progressPercent, completedCount, totalUserBlocks, completionPercent }
-  }, [renderBlocks, allBlocks, schedule, completedBlocks, adhanBlocks])
+  }, [renderBlocks, allBlocks, schedule, completedBlocks, adhanBlocks, adhanVersion])
 
   const hasUserBlocks = useMemo(() => {
     return Object.keys(schedule).length > 0
